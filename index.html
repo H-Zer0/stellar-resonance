@@ -4,9 +4,10 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>DEEP SEA SYMBIOSIS | Next-Gen Abyss</title>
+    <title>DEEP SEA SYMBIOSIS | The Cycle</title>
     <style>
         :root {
+            --accent: #00ffff;
             --bg: #000510;
         }
 
@@ -14,6 +15,7 @@
             margin: 0;
             padding: 0;
             box-sizing: border-box;
+            -webkit-user-select: none;
         }
 
         body,
@@ -22,160 +24,411 @@
             height: 100%;
             overflow: hidden;
             background: var(--bg);
+            font-family: "Optima", "BIZ UDPMincho", serif;
             color: white;
-            font-family: "Optima", serif;
-            cursor: crosshair;
         }
 
-        #canvas-wrapper {
+        #canvas-container {
             position: absolute;
             inset: 0;
             z-index: 1;
         }
 
-        #overlay {
+        /* UI Layers */
+        #ui-layer {
             position: absolute;
             inset: 0;
             display: flex;
-            justify-content: center;
-            align-items: center;
+            flex-direction: column;
+            justify-content: space-between;
             pointer-events: none;
             z-index: 10;
+            padding: 2rem;
         }
 
-        #intro-text {
+        .pane {
+            pointer-events: auto;
+        }
+
+        #top-ui {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+        }
+
+        #title-area {
+            text-align: left;
+        }
+
+        h1 {
             font-size: 1.2rem;
-            letter-spacing: 0.8rem;
-            opacity: 0;
-            transition: opacity 3s, transform 3s;
-            text-shadow: 0 0 20px rgba(0, 255, 255, 0.5);
+            letter-spacing: 0.5rem;
+            color: var(--accent);
+            opacity: 0.8;
+            text-shadow: 0 0 10px var(--accent);
         }
 
-        #intro-text.visible {
-            opacity: 0.7;
-            transform: translateY(0);
+        p.subtitle {
+            font-size: 0.8rem;
+            letter-spacing: 0.2rem;
+            opacity: 0.6;
+            margin-top: 0.5rem;
         }
 
-        .breathing {
-            animation: breathe 6s ease-in-out infinite;
+        #controls {
+            display: flex;
+            gap: 1rem;
+        }
+
+        .btn-circle {
+            width: 44px;
+            height: 44px;
+            border-radius: 50%;
+            border: 1px solid rgba(0, 255, 255, 0.3);
+            background: rgba(0, 5, 16, 0.6);
+            backdrop-filter: blur(10px);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            transition: 0.3s;
+        }
+
+        .btn-circle:hover {
+            border-color: var(--accent);
+            box-shadow: 0 0 15px var(--accent);
+        }
+
+        .btn-circle svg {
+            width: 20px;
+            height: 20px;
+            fill: var(--accent);
+        }
+
+        #bottom-ui {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 1rem;
+        }
+
+        #hint-text {
+            font-size: 0.9rem;
+            letter-spacing: 0.3rem;
+            opacity: 0.5;
+            animation: breathe 4s infinite;
+        }
+
+        #draw-btn {
+            padding: 1rem 3rem;
+            border-radius: 2rem;
+            border: 1px solid var(--accent);
+            background: rgba(0, 255, 255, 0.1);
+            color: var(--accent);
+            font-size: 1rem;
+            letter-spacing: 0.5rem;
+            cursor: pointer;
+            transition: 0.3s;
+            text-transform: uppercase;
+        }
+
+        #draw-btn:hover {
+            background: var(--accent);
+            color: var(--bg);
+            box-shadow: 0 0 30px var(--accent);
+        }
+
+        /* Drawing Overlay */
+        #drawing-overlay {
+            position: absolute;
+            inset: 0;
+            background: rgba(0, 5, 16, 0.8);
+            display: none;
+            z-index: 20;
+            cursor: crosshair;
+        }
+
+        #drawing-overlay.active {
+            display: block;
+        }
+
+        #drawing-canvas {
+            width: 100%;
+            height: 100%;
+        }
+
+        #draw-instructions {
+            position: absolute;
+            top: 10%;
+            width: 100%;
+            text-align: center;
+            font-size: 1rem;
+            letter-spacing: 0.4rem;
+            color: var(--accent);
         }
 
         @keyframes breathe {
 
             0%,
             100% {
-                opacity: 0.2;
+                opacity: 0.3;
+                transform: scale(0.98);
             }
 
             50% {
                 opacity: 0.8;
+                transform: scale(1);
             }
+        }
+
+        /* Sound Icon Placeholder */
+        .sound-off line {
+            display: none;
         }
     </style>
 </head>
 
 <body>
-    <div id="canvas-wrapper"></div>
-    <div id="overlay">
-        <div id="intro-text" class="breathing">闇をなぞる、生命が灯る</div>
+    <div id="canvas-container"></div>
+
+    <div id="ui-layer">
+        <div id="top-ui" class="pane">
+            <div id="title-area">
+                <h1>深海のサイクル</h1>
+                <p class="subtitle">SYMBIOSIS OF THE ABYSS</p>
+            </div>
+            <div id="controls">
+                <div class="btn-circle" id="reset-btn" title="Reset ecosystem">
+                    <svg viewBox="0 0 24 24">
+                        <path
+                            d="M17.65 6.35C16.2 4.9 14.21 4 12 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08c-.82 2.33-3.04 4-5.65 4-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z" />
+                    </svg>
+                </div>
+                <div class="btn-circle" id="sound-btn" title="Toggle Sound">
+                    <svg viewBox="0 0 24 24" id="sound-icon">
+                        <path
+                            d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z" />
+                    </svg>
+                </div>
+            </div>
+        </div>
+        <div id="bottom-ui" class="pane">
+            <div id="hint-text">海は静かに、あなたの筆跡を待っている</div>
+            <button id="draw-btn">生命を創る</button>
+        </div>
+    </div>
+
+    <div id="drawing-overlay">
+        <div id="draw-instructions">一本の線を、一息に描いてください</div>
+        <canvas id="drawing-canvas"></canvas>
     </div>
 
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
-
     <script>
         (function () {
             if (typeof THREE === 'undefined') return;
 
-            // --- CONSTANTS ---
-            const GRID_SIZE = 64;
-            const CREATURE_LIMIT = 100;
-            const SNOW_COUNT = 3000;
-            const COLORS = [0x00FFFF, 0xFF00FF, 0x007FFF, 0x7FFF00, 0xFFFF00];
+            // --- CONFIG ---
+            const COLORS = [0x00ffff, 0xff00ff, 0x007fff, 0x7fff00, 0xffff00];
+            const MAX_CREATURES = 100;
 
-            // --- UTILS ---
-            const lerp = (a, b, t) => a + (b - a) * t;
+            // --- STATE ---
+            let isDrawingMode = false;
+            let isMuted = true;
 
-            // --- FLUID FIELD (CPU Grid) ---
-            class FluidField {
-                constructor(size) {
-                    this.size = size;
-                    this.grid = new Float32Array(size * size * 2); // vx, vy
-                    this.density = new Float32Array(size * size);
-                }
+            // --- THREEJS BASE ---
+            let scene, camera, renderer, clock;
+            let creatures = [];
+            let particles, godRays;
 
-                addVelocity(x, y, vx, vy, radius = 2) {
-                    const gx = Math.floor(((x + 10) / 20) * this.size);
-                    const gy = Math.floor(((y + 10) / 20) * this.size);
+            function initScene() {
+                scene = new THREE.Scene();
+                camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 2000);
+                camera.position.set(0, 0, 40);
 
-                    for (let i = -radius; i <= radius; i++) {
-                        for (let j = -radius; j <= radius; j++) {
-                            const nx = gx + i;
-                            const ny = gy + j;
-                            if (nx >= 0 && nx < this.size && ny >= 0 && ny < this.size) {
-                                const idx = (ny * this.size + nx) * 2;
-                                const weight = 1 / (1 + Math.sqrt(i * i + j * j));
-                                this.grid[idx] += vx * weight * 0.5;
-                                this.grid[idx + 1] += vy * weight * 0.5;
-                            }
-                        }
-                    }
-                }
+                renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+                renderer.setSize(window.innerWidth, window.innerHeight);
+                renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+                renderer.setClearColor(0x000510, 1);
+                document.getElementById('canvas-container').appendChild(renderer.domElement);
 
-                update(time) {
-                    for (let i = 0; i < this.grid.length; i++) {
-                        this.grid[i] *= 0.97; // Slightly higher dampening
-                    }
-                    // Add ambient turbulence (Sea Current)
-                    const t = time * 0.3;
-                    for (let i = 0; i < 5; i++) {
-                        const rx = Math.floor(Math.random() * this.size);
-                        const ry = Math.floor(Math.random() * this.size);
-                        const idx = (ry * this.size + rx) * 2;
-                        this.grid[idx] += Math.sin(t + i) * 0.05;
-                        this.grid[idx + 1] += Math.cos(t + i) * 0.05;
-                    }
-                }
+                clock = new THREE.Clock();
 
-                getVelocity(x, y) {
-                    const gx = Math.floor(((x + 15) / 30) * this.size);
-                    const gy = Math.floor(((y + 15) / 30) * this.size);
-                    if (gx < 0 || gx >= this.size || gy < 0 || gy >= this.size) return { x: 0, y: 0 };
-                    const idx = (gy * this.size + gx) * 2;
-                    return { x: this.grid[idx], y: this.grid[idx + 1] };
-                }
+                // Environment
+                addEnvironment();
+
+                // Animation Loop
+                animate();
             }
 
-            // --- RIBBON ENTITY ---
+            function addEnvironment() {
+                // Marine Snow
+                const count = 2000;
+                const geo = new THREE.BufferGeometry();
+                const pos = new Float32Array(count * 3);
+                for (let i = 0; i < count * 3; i++) pos[i] = (Math.random() - 0.5) * 100;
+                geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+                const mat = new THREE.PointsMaterial({ color: 0x00ffff, size: 0.1, transparent: true, opacity: 0.3 });
+                particles = new THREE.Points(geo, mat);
+                scene.add(particles);
+
+                // God Rays
+                const rayGeo = new THREE.PlaneGeometry(100, 100);
+                const rayMat = new THREE.ShaderMaterial({
+                    uniforms: { uTime: { value: 0 } },
+                    vertexShader: `varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
+                    fragmentShader: `
+                        uniform float uTime;
+                        varying vec2 vUv;
+                        void main() {
+                            float b = sin(vUv.x * 10.0 + uTime * 0.5) * 0.5 + 0.5;
+                            float a = (1.0 - vUv.y) * 0.1 * b;
+                            gl_FragColor = vec4(0.0, 0.8, 1.0, a);
+                        }
+                    `,
+                    transparent: true, blending: THREE.AdditiveBlending, side: THREE.DoubleSide
+                });
+                godRays = new THREE.Mesh(rayGeo, rayMat);
+                godRays.position.y = 50;
+                godRays.rotation.x = Math.PI / 2.5;
+                scene.add(godRays);
+            }
+
+            // --- CAMERA INTERACTION ---
+            let targetRotX = 0, targetRotY = 0;
+            let currentRotX = 0, currentRotY = 0;
+            let targetZoom = 40, currentZoom = 40;
+            let isDragging = false, lastMouseX = 0, lastMouseY = 0;
+
+            function initInteraction() {
+                window.addEventListener('mousedown', (e) => {
+                    if (isDrawingMode) return;
+                    isDragging = true;
+                    lastMouseX = e.clientX;
+                    lastMouseY = e.clientY;
+                });
+                window.addEventListener('mousemove', (e) => {
+                    if (!isDragging || isDrawingMode) return;
+                    const dx = e.clientX - lastMouseX;
+                    const dy = e.clientY - lastMouseY;
+                    targetRotY += dx * 0.005;
+                    targetRotX += dy * 0.005;
+                    lastMouseX = e.clientX;
+                    lastMouseY = e.clientY;
+                });
+                window.addEventListener('mouseup', () => isDragging = false);
+                window.addEventListener('wheel', (e) => {
+                    if (isDrawingMode) return;
+                    targetZoom = THREE.MathUtils.clamp(targetZoom + e.deltaY * 0.05, 10, 100);
+                });
+
+                // UI Events
+                document.getElementById('draw-btn').onclick = () => toggleDrawingMode(true);
+                document.getElementById('reset-btn').onclick = resetEcosystem;
+                document.getElementById('sound-btn').onclick = toggleSound;
+
+                initDrawingCanvas();
+            }
+
+            function updateCamera() {
+                currentRotX = THREE.MathUtils.lerp(currentRotX, targetRotX, 0.05);
+                currentRotY = THREE.MathUtils.lerp(currentRotY, targetRotY, 0.05);
+                currentZoom = THREE.MathUtils.lerp(currentZoom, targetZoom, 0.05);
+
+                const phi = currentRotX;
+                const theta = currentRotY;
+                camera.position.x = currentZoom * Math.sin(theta) * Math.cos(phi);
+                camera.position.y = currentZoom * Math.sin(phi);
+                camera.position.z = currentZoom * Math.cos(theta) * Math.cos(phi);
+                camera.lookAt(0, 0, 0);
+            }
+
+            // --- DRAWING LOGIC ---
+            let dCanvas, dCtx, stroke = [];
+            function initDrawingCanvas() {
+                dCanvas = document.getElementById('drawing-canvas');
+                dCtx = dCanvas.getContext('2d');
+                resizeDrawingCanvas();
+                window.addEventListener('resize', resizeDrawingCanvas);
+
+                dCanvas.onmousedown = (e) => { stroke = [{ x: e.clientX, y: e.clientY, t: Date.now() }]; };
+                dCanvas.onmousemove = (e) => {
+                    if (stroke.length === 0) return;
+                    const p = { x: e.clientX, y: e.clientY, t: Date.now() };
+                    stroke.push(p);
+                    drawStroke();
+                };
+                dCanvas.onmouseup = () => {
+                    if (stroke.length > 5) createLifeFromStroke(stroke);
+                    stroke = [];
+                    toggleDrawingMode(false);
+                };
+            }
+
+            function resizeDrawingCanvas() {
+                dCanvas.width = window.innerWidth;
+                dCanvas.height = window.innerHeight;
+            }
+
+            function drawStroke() {
+                dCtx.clearRect(0, 0, dCanvas.width, dCanvas.height);
+                dCtx.beginPath();
+                dCtx.strokeStyle = '#00ffff';
+                dCtx.lineWidth = 3;
+                dCtx.lineCap = 'round';
+                dCtx.lineJoin = 'round';
+                dCtx.moveTo(stroke[0].x, stroke[0].y);
+                for (let i = 1; i < stroke.length; i++) dCtx.lineTo(stroke[i].x, stroke[i].y);
+                dCtx.stroke();
+            }
+
+            function toggleDrawingMode(active) {
+                isDrawingMode = active;
+                document.getElementById('drawing-overlay').classList.toggle('active', active);
+                if (!active) dCtx.clearRect(0, 0, dCanvas.width, dCanvas.height);
+            }
+
+            // --- CREATURE CLASS ---
             class Creature {
-                constructor(initialPoints, color, scene) {
+                constructor(points, type, color, scene) {
                     this.scene = scene;
-                    this.points = [];
-                    this.segments = initialPoints.length;
+                    this.type = type; // 'dart', 'eel', 'float'
                     this.color = new THREE.Color(color);
                     this.energy = 1.0;
-                    this.decay = 0.0008 + Math.random() * 0.0012;
+                    this.age = 0;
+                    this.maxAge = 15 + Math.random() * 20;
 
-                    // Initial skeleton from user drawing
-                    for (let i = 0; i < this.segments; i++) {
-                        this.points.push(initialPoints[i].clone());
-                    }
+                    // AI Params based on type
+                    this.maxSpeed = type === 'dart' ? 0.4 : (type === 'eel' ? 0.2 : 0.1);
+                    this.steerForce = type === 'dart' ? 0.05 : 0.02;
 
-                    this.pos = initialPoints[0].clone();
-                    this.vel = new THREE.Vector2(0, 0);
-                    this.angle = Math.random() * Math.PI * 2;
-                    this.speed = 0.02 + Math.random() * 0.04;
-                    this.noiseSeed = Math.random() * 100;
+                    // State
+                    this.pos = points[0].clone();
+                    this.vel = new THREE.Vector3((Math.random() - 0.5) * 0.1, (Math.random() - 0.5) * 0.1, (Math.random() - 0.5) * 0.1);
+                    this.acc = new THREE.Vector3();
 
-                    // Create Ribbon Mesh
+                    // Trail/Skeleton (Keep original points as seed or reference)
+                    this.segments = type === 'eel' ? 50 : 25;
+                    this.history = [];
+                    for (let i = 0; i < this.segments; i++) this.history.push(this.pos.clone());
+
+                    // Mesh
+                    this.initMesh();
+                }
+
+                initMesh() {
                     this.geometry = new THREE.BufferGeometry();
                     const vertices = new Float32Array(this.segments * 2 * 3);
+                    const uvs = new Float32Array(this.segments * 2 * 2);
                     this.geometry.setAttribute('position', new THREE.BufferAttribute(vertices, 3));
+                    this.geometry.setAttribute('uv', new THREE.BufferAttribute(uvs, 2));
 
                     this.material = new THREE.ShaderMaterial({
                         uniforms: {
                             uColor: { value: this.color },
                             uEnergy: { value: this.energy },
-                            uTime: { value: 0 }
+                            uTime: { value: 0 },
+                            uType: { value: this.type === 'dart' ? 0 : (this.type === 'eel' ? 1 : 2) }
                         },
                         vertexShader: `
                             varying vec2 vUv;
@@ -188,87 +441,99 @@
                             uniform vec3 uColor;
                             uniform float uEnergy;
                             uniform float uTime;
+                            uniform float uType;
                             varying vec2 vUv;
                             void main() {
-                                float glow1 = pow(1.0 - abs(vUv.y - 0.5) * 2.0, 5.0);
-                                float glow2 = pow(1.0 - abs(vUv.y - 0.5) * 2.0, 1.2) * 0.4;
-                                float pulse = 0.8 + 0.2 * sin(uTime * 4.0 + vUv.x * 5.0);
-                                vec3 finalColor = mix(uColor, vec3(1.0), glow1 * 0.7);
-                                float alpha = (glow1 + glow2) * uEnergy * pulse * (1.0 - vUv.x);
+                                float glow = pow(1.0 - abs(vUv.y - 0.5) * 2.0, 4.0);
+                                float taper = 1.0 - vUv.x;
+                                
+                                // Organic pulsing
+                                float pulse = 0.7 + 0.3 * sin(uTime * 3.0 + vUv.x * 10.0);
+                                if(uType > 1.5) pulse = 0.7 + 0.3 * sin(uTime * 1.5 + vUv.x * 5.0); // Jellyfish slow pulse
+                                
+                                vec3 finalColor = mix(uColor, vec3(1.0), glow * 0.5);
+                                float alpha = glow * uEnergy * pulse * taper;
+                                
                                 gl_FragColor = vec4(finalColor, alpha);
                             }
                         `,
-                        transparent: true,
-                        blending: THREE.AdditiveBlending,
-                        side: THREE.DoubleSide,
-                        depthWrite: false
+                        transparent: true, blending: THREE.AdditiveBlending, side: THREE.DoubleSide, depthWrite: false
                     });
 
                     this.mesh = new THREE.Mesh(this.geometry, this.material);
                     this.scene.add(this.mesh);
                 }
 
-                update(time, fluid) {
-                    // Lead movement
-                    const fVel = fluid.getVelocity(this.pos.x, this.pos.y);
-                    this.vel.x += fVel.x * 0.12;
-                    this.vel.y += fVel.y * 0.12;
+                update(time, delta, others) {
+                    this.age += delta;
+                    this.energy = Math.max(0, 1.0 - this.age / this.maxAge);
 
-                    const noise = Math.sin(time * 0.8 + this.noiseSeed) * 0.02;
-                    this.angle += noise;
+                    // Simple Boids-lite (Wander + Separation)
+                    this.wander();
+                    this.separate(others);
 
-                    const moveX = Math.cos(this.angle) * this.speed;
-                    const moveY = Math.sin(this.angle) * this.speed;
-                    this.pos.x += moveX + this.vel.x;
-                    this.pos.y += moveY + this.vel.y;
+                    this.vel.add(this.acc);
+                    this.vel.clampLength(0.01, this.maxSpeed);
+                    this.pos.add(this.vel);
+                    this.acc.multiplyScalar(0);
 
-                    this.vel.multiplyScalar(0.97);
+                    // Bound checking (Soft return to center)
+                    if (this.pos.length() > 50) this.acc.add(this.pos.clone().multiplyScalar(-0.001));
 
-                    // Re-orient the whole creature towards movement
-                    const head = this.points[0];
-                    const dx = this.pos.x - head.x;
-                    const dy = this.pos.y - head.y;
-                    head.x = this.pos.x;
-                    head.y = this.pos.y;
+                    // Update Trail
+                    this.history.unshift(this.pos.clone());
+                    if (this.history.length > this.segments) this.history.pop();
 
-                    fluid.addVelocity(this.pos.x, this.pos.y, dx * 3, dy * 3, 2);
-
-                    // Social behavior (simple wiggle along body)
-                    for (let i = 1; i < this.segments; i++) {
-                        const p = this.points[i];
-                        const prev = this.points[i - 1];
-
-                        const targetX = prev.x;
-                        const targetY = prev.y;
-
-                        // Wiggle effect
-                        const wiggle = Math.sin(time * 3 + i * 0.2) * 0.02;
-                        p.x = lerp(p.x, targetX, 0.15) + wiggle;
-                        p.y = lerp(p.y, targetY, 0.15);
-                    }
-
-                    // Update Topology mesh
+                    // Update Geometry
                     const attr = this.geometry.attributes.position;
-                    const baseThickness = 0.2;
+                    const baseThickness = this.type === 'eel' ? 0.3 : (this.type === 'float' ? 0.6 : 0.2);
 
                     for (let i = 0; i < this.segments; i++) {
-                        const p = this.points[i];
-                        const prev = i > 0 ? this.points[i - 1] : (i < this.segments - 1 ? this.points[i + 1] : p);
-                        const angle = Math.atan2(p.y - prev.y, p.x - prev.x);
-                        const nx = Math.sin(angle);
-                        const ny = -Math.cos(angle);
+                        const p = this.history[i];
+                        const prev = i > 0 ? this.history[i - 1] : (i < this.segments - 1 ? this.history[i + 1] : p);
 
-                        const taper = Math.pow(1.0 - i / this.segments, 0.7);
-                        const currentThickness = baseThickness * taper;
+                        const direction = p.clone().sub(prev).normalize();
+                        const normal = new THREE.Vector3(-direction.y, direction.x, 0).normalize();
 
-                        attr.setXYZ(i * 2, p.x + nx * currentThickness, p.y + ny * currentThickness, 1.0);
-                        attr.setXYZ(i * 2 + 1, p.x - nx * currentThickness, p.y - ny * currentThickness, 1.0);
+                        // Morph based on age/pulse
+                        let thickness = baseThickness * (1.0 - i / this.segments);
+                        if (this.type === 'float') thickness *= (1.0 + 0.5 * Math.sin(time * 2 + i * 0.5));
+
+                        const pLeft = p.clone().add(normal.clone().multiplyScalar(thickness));
+                        const pRight = p.clone().sub(normal.clone().multiplyScalar(thickness));
+
+                        attr.setXYZ(i * 2, pLeft.x, pLeft.y, pLeft.z);
+                        attr.setXYZ(i * 2 + 1, pRight.x, pRight.y, pRight.z);
                     }
                     attr.needsUpdate = true;
 
-                    this.energy -= this.decay;
                     this.material.uniforms.uEnergy.value = this.energy;
                     this.material.uniforms.uTime.value = time;
+                }
+
+                wander() {
+                    const noise = 0.02;
+                    this.acc.add(new THREE.Vector3((Math.random() - 0.5) * noise, (Math.random() - 0.5) * noise, (Math.random() - 0.5) * noise));
+                }
+
+                separate(others) {
+                    let d = 5.0;
+                    let steer = new THREE.Vector3();
+                    let count = 0;
+                    others.forEach(o => {
+                        if (o === this) return;
+                        let dist = this.pos.distanceTo(o.pos);
+                        if (dist < d) {
+                            let diff = this.pos.clone().sub(o.pos).normalize().divideScalar(dist);
+                            steer.add(diff);
+                            count++;
+                        }
+                    });
+                    if (count > 0) {
+                        steer.divideScalar(count);
+                        steer.normalize().multiplyScalar(this.maxSpeed).sub(this.vel).clampLength(0, this.steerForce);
+                        this.acc.add(steer);
+                    }
                 }
 
                 isDead() { return this.energy <= 0; }
@@ -279,240 +544,135 @@
                 }
             }
 
-            // --- MAIN ENGINE ---
-            class AbyssEngine {
-                constructor() {
-                    this.container = document.getElementById('canvas-wrapper');
-                    this.introText = document.getElementById('intro-text');
-                    this.creatures = [];
-                    this.fluid = new FluidField(GRID_SIZE);
-                    this.mouse = new THREE.Vector2();
-                    this.prevMouse = new THREE.Vector2();
-                    this.isDown = false;
-                    this.isDrawing = false;
-                    this.currentStroke = [];
-                    this.time = 0;
-                    this.phase = 0;
+            // --- DRAWING LOGIC ---
+            let dCanvas, dCtx, stroke = [];
+            function initDrawingCanvas() {
+                dCanvas = document.getElementById('drawing-canvas');
+                dCtx = dCanvas.getContext('2d');
+                resizeDrawingCanvas();
+                window.addEventListener('resize', resizeDrawingCanvas);
 
-                    this.init();
-                    this.animate();
-
-                    window.addEventListener('load', () => {
-                        this.introText.classList.add('visible');
-                        this.phase = 1;
-                    });
-                }
-
-                init() {
-                    this.scene = new THREE.Scene();
-                    this.camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 1000);
-                    this.camera.position.z = 15;
-
-                    this.renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, preserveDrawingBuffer: true });
-                    this.renderer.setSize(window.innerWidth, window.innerHeight);
-                    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-                    this.renderer.autoClear = false;
-                    this.renderer.setClearColor(0x000510, 1);
-                    this.container.appendChild(this.renderer.domElement);
-
-                    // Feedback trails
-                    this.fadePlane = new THREE.Mesh(
-                        new THREE.PlaneGeometry(100, 100),
-                        new THREE.MeshBasicMaterial({ color: 0x000510, transparent: true, opacity: 0.1 })
-                    );
-                    this.fadePlane.position.z = 1;
-                    this.scene.add(this.fadePlane);
-
-                    // Space Particles (Marine Snow)
-                    const snowGeo = new THREE.BufferGeometry();
-                    const snowPos = new Float32Array(SNOW_COUNT * 3);
-                    for (let i = 0; i < SNOW_COUNT * 3; i++) snowPos[i] = THREE.MathUtils.randFloatSpread(50);
-                    snowGeo.setAttribute('position', new THREE.BufferAttribute(snowPos, 3));
-                    this.snow = new THREE.Points(snowGeo, new THREE.PointsMaterial({ color: 0x00FFFF, size: 0.03, transparent: true, opacity: 0.2 }));
-                    this.scene.add(this.snow);
-
-                    // Atmosphere Rays
-                    const rayGeo = new THREE.PlaneGeometry(40, 40);
-                    const rayMat = new THREE.ShaderMaterial({
-                        uniforms: { uTime: { value: 0 } },
-                        vertexShader: `varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
-                        fragmentShader: `
-                            uniform float uTime;
-                            varying vec2 vUv;
-                            void main() {
-                                float beam = sin(vUv.x * 20.0 + uTime * 0.5) * 0.5 + 0.5;
-                                float alpha = (1.0 - vUv.y) * 0.1 * beam;
-                                gl_FragColor = vec4(0.0, 0.5, 1.0, alpha);
-                            }
-                        `,
-                        transparent: true,
-                        blending: THREE.AdditiveBlending,
-                        side: THREE.DoubleSide
-                    });
-                    this.rays = new THREE.Mesh(rayGeo, rayMat);
-                    this.rays.position.set(0, 10, -5);
-                    this.rays.rotation.x = -Math.PI / 3;
-                    this.scene.add(this.rays);
-
-                    // Deep Sea Haze (Background Noise)
-                    const hazeGeo = new THREE.PlaneGeometry(100, 100);
-                    const hazeMat = new THREE.ShaderMaterial({
-                        uniforms: { uTime: { value: 0 } },
-                        vertexShader: `varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
-                        fragmentShader: `
-                            uniform float uTime;
-                            varying vec2 vUv;
-                            float noise(vec2 p) { return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453); }
-                            void main() {
-                                float n = noise(vUv * 5.0 + uTime * 0.1);
-                                float smoke = sin(vUv.x * 3.0 + uTime * 0.2) * cos(vUv.y * 3.0 + uTime * 0.3) * 0.5 + 0.5;
-                                gl_FragColor = vec4(0.0, 0.05, 0.1, smoke * 0.08);
-                            }
-                        `,
-                        transparent: true,
-                        depthWrite: false,
-                        blending: THREE.AdditiveBlending
-                    });
-                    this.haze.position.z = -15; // Far back
-                    this.scene.add(this.haze);
-
-                    // Preview Line for drawing
-                    const previewGeo = new THREE.BufferGeometry();
-                    const previewPos = new Float32Array(500 * 3);
-                    previewGeo.setAttribute('position', new THREE.BufferAttribute(previewPos, 3));
-                    this.previewLine = new THREE.Line(previewGeo, new THREE.LineBasicMaterial({ color: 0xFFFFFF, transparent: true, opacity: 0.5 }));
-                    this.scene.add(this.previewLine);
-                }
-
-                bindEvents() {
-                    const getPoint = (e) => {
-                        const v = new THREE.Vector3((e.clientX / window.innerWidth) * 2 - 1, -(e.clientY / window.innerHeight) * 2 + 1, 0.5).unproject(this.camera);
-                        const dir = v.sub(this.camera.position).normalize();
-                        return this.camera.position.clone().add(dir.multiplyScalar(-this.camera.position.z / dir.z));
-                    };
-
-                    const start = (e) => {
-                        this.isDown = true;
-                        this.currentStroke = [];
-                        if (this.phase === 1) {
-                            this.phase = 2;
-                            this.introText.classList.remove('visible');
-                        }
-                    };
-                    const move = (e) => {
-                        if (this.isDown) {
-                            const p = getPoint(e.touches ? e.touches[0] : e);
-                            this.currentStroke.push(p);
-                            if (this.currentStroke.length > 500) this.currentStroke.shift();
-
-                            // Update preview line
-                            const pos = this.previewLine.geometry.attributes.position.array;
-                            for (let i = 0; i < this.currentStroke.length; i++) {
-                                pos[i * 3] = this.currentStroke[i].x;
-                                pos[i * 3 + 1] = this.currentStroke[i].y;
-                                pos[i * 3 + 2] = this.currentStroke[i].z;
-                            }
-                            this.previewLine.geometry.setDrawRange(0, this.currentStroke.length);
-                            this.previewLine.geometry.attributes.position.needsUpdate = true;
-
-                            // Add fluid velocity from brush
-                            if (this.currentStroke.length > 1) {
-                                const head = this.currentStroke[this.currentStroke.length - 1];
-                                const prev = this.currentStroke[this.currentStroke.length - 2];
-                                this.fluid.addVelocity(head.x, head.y, (head.x - prev.x) * 5, (head.y - prev.y) * 5, 2);
-                            }
-                        }
-                    };
-                    const end = () => {
-                        if (this.isDown && this.currentStroke.length > 5) {
-                            this.spawnFromStroke();
-                        }
-                        this.isDown = false;
-                        this.currentStroke = [];
-                        this.previewLine.geometry.setDrawRange(0, 0);
-                    };
-
-                    window.addEventListener('mousedown', start);
-                    window.addEventListener('mousemove', move);
-                    window.addEventListener('mouseup', end);
-                    window.addEventListener('touchstart', (e) => { e.preventDefault(); start(e.touches[0]); }, { passive: false });
-                    window.addEventListener('touchmove', (e) => { e.preventDefault(); move(e.touches[0]); }, { passive: false });
-                    window.addEventListener('touchend', end);
-
-                    window.addEventListener('resize', () => {
-                        this.camera.aspect = window.innerWidth / window.innerHeight;
-                        this.camera.updateProjectionMatrix();
-                        this.renderer.setSize(window.innerWidth, window.innerHeight);
-                    });
-                }
-
-                spawnFromStroke() {
-                    if (this.creatures.length > CREATURE_LIMIT) return;
-
-                    // Resample stroke to a manageable number of segments (e.g., 30)
-                    const resampled = [];
-                    const steps = 30;
-                    for (let i = 0; i < steps; i++) {
-                        const t = i / (steps - 1);
-                        const idx = Math.floor(t * (this.currentStroke.length - 1));
-                        resampled.push(this.currentStroke[idx].clone());
-                    }
-
-                    const color = COLORS[Math.floor(Math.random() * COLORS.length)];
-                    this.creatures.push(new Creature(resampled, color, this.scene));
-
-                    this.spawnBurst(resampled[0].x, resampled[0].y, 10);
-                }
-
-                spawnBurst(x, y, count) {
-                    for (let i = 0; i < count; i++) {
-                        const px = x + (Math.random() - 0.5);
-                        const py = y + (Math.random() - 0.5);
-                        const p = [];
-                        for (let j = 0; j < 10; j++) p.push(new THREE.Vector3(px, py, 0));
-                        // this.creatures.push(new Creature(p, COLORS[0], this.scene)); // Burst not needed or different
-                    }
-                }
-
-                animate() {
-                    requestAnimationFrame(() => this.animate());
-                    this.time += 0.016;
-                    this.fluid.update(this.time);
-
-                    // Render Feedback
-                    this.fadePlane.position.copy(this.camera.position).add(this.camera.getWorldDirection(new THREE.Vector3()).multiplyScalar(1));
-                    this.renderer.render(this.scene, this.camera);
-
-                    // Update Entities
-                    for (let i = this.creatures.length - 1; i >= 0; i--) {
-                        const c = this.creatures[i];
-                        c.update(this.time, this.fluid);
-                        if (c.isDead()) {
-                            c.destroy();
-                            this.creatures.splice(i, 1);
-                        }
-                    }
-
-                    // Snow Fluid Effect
-                    const pos = this.snow.geometry.attributes.position.array;
-                    for (let i = 0; i < SNOW_COUNT; i++) {
-                        const x = pos[i * 3];
-                        const y = pos[i * 3 + 1];
-                        const v = this.fluid.getVelocity(x, y);
-                        pos[i * 3] += v.x * 0.2;
-                        pos[i * 3 + 1] += v.y * 0.2 - 0.005; // Fall + fluid
-                        if (pos[i * 3 + 1] < -15) pos[i * 3 + 1] = 15;
-                    }
-                    this.snow.geometry.attributes.position.needsUpdate = true;
-
-                    if (this.rays) this.rays.material.uniforms.uTime.value = this.time;
-                    if (this.haze) this.haze.material.uniforms.uTime.value = this.time;
-
-                    this.renderer.render(this.scene, this.camera);
-                }
+                dCanvas.onmousedown = (e) => {
+                    stroke = [{ x: e.clientX, y: e.clientY, t: Date.now() }];
+                };
+                dCanvas.onmousemove = (e) => {
+                    if (stroke.length === 0) return;
+                    stroke.push({ x: e.clientX, y: e.clientY, t: Date.now() });
+                    drawStroke();
+                };
+                dCanvas.onmouseup = () => {
+                    if (stroke.length > 5) createLifeFromStroke(stroke);
+                    stroke = [];
+                    toggleDrawingMode(false);
+                };
             }
 
-            window.onload = () => new AbyssEngine();
+            function resizeDrawingCanvas() {
+                dCanvas.width = window.innerWidth;
+                dCanvas.height = window.innerHeight;
+            }
+
+            function drawStroke() {
+                dCtx.clearRect(0, 0, dCanvas.width, dCanvas.height);
+                dCtx.beginPath();
+                const grad = dCtx.createLinearGradient(stroke[0].x, stroke[0].y, stroke[stroke.length - 1].x, stroke[stroke.length - 1].y);
+                grad.addColorStop(0, '#00ffff');
+                grad.addColorStop(1, '#ffffff');
+                dCtx.strokeStyle = grad;
+                dCtx.lineWidth = 4;
+                dCtx.lineCap = 'round';
+                dCtx.lineJoin = 'round';
+                dCtx.shadowBlur = 10;
+                dCtx.shadowColor = '#00ffff';
+                dCtx.moveTo(stroke[0].x, stroke[0].y);
+                for (let i = 1; i < stroke.length; i++) dCtx.lineTo(stroke[i].x, stroke[i].y);
+                dCtx.stroke();
+            }
+
+            function toggleDrawingMode(active) {
+                isDrawingMode = active;
+                document.getElementById('drawing-overlay').classList.toggle('active', active);
+                if (!active) dCtx.clearRect(0, 0, dCanvas.width, dCanvas.height);
+            }
+
+            function createLifeFromStroke(points) {
+                // Analysis
+                const start = points[0];
+                const end = points[points.length - 1];
+                const duration = end.t - start.t;
+                const pathLength = points.reduce((acc, p, i) => i === 0 ? 0 : acc + Math.sqrt((p.x - points[i - 1].x) ** 2 + (p.y - points[i - 1].y) ** 2), 0);
+                const straightDist = Math.sqrt((end.x - start.x) ** 2 + (end.y - start.y) ** 2);
+                const curvature = pathLength / (straightDist || 1);
+                const avgSpeed = pathLength / (duration || 1);
+
+                // Determine Archetype
+                let type = 'dart';
+                if (curvature > 2.0 && pathLength > 200) type = 'eel';
+                else if (avgSpeed < 0.5 && pathLength > 100) type = 'float';
+
+                // Convert Screen Points to 3D World Points for seed
+                const worldPoints = points.map(p => {
+                    const vec = new THREE.Vector3((p.x / window.innerWidth) * 2 - 1, -(p.y / window.innerHeight) * 2 + 1, 0.5);
+                    vec.unproject(camera);
+                    const dir = vec.sub(camera.position).normalize();
+                    const distance = -camera.position.z / dir.z; // Project to Z=0 plane
+                    return camera.position.clone().add(dir.multiplyScalar(distance));
+                });
+
+                const color = COLORS[Math.floor(Math.random() * COLORS.length)];
+                const creature = new Creature(worldPoints, type, color, scene);
+                creatures.push(creature);
+
+                // Trigger Birth VFX
+                console.log(`Born: ${type} Speed:${avgSpeed.toFixed(2)} Curv:${curvature.toFixed(2)}`);
+            }
+
+            function resetEcosystem() {
+                console.log("Resetting ecosystem...");
+                creatures.forEach(c => scene.remove(c.mesh));
+                creatures = [];
+            }
+
+            function toggleSound() {
+                isMuted = !isMuted;
+                document.getElementById('sound-icon').classList.toggle('sound-off', isMuted);
+                // Background audio implementation placeholder
+            }
+
+            // --- LOOP ---
+            function animate() {
+                requestAnimationFrame(animate);
+                const delta = clock.getDelta();
+                const time = clock.getElapsedTime();
+
+                updateCamera();
+
+                if (godRays) godRays.material.uniforms.uTime.value = time;
+                if (particles) {
+                    particles.rotation.y += 0.001;
+                    const pos = particles.geometry.attributes.position.array;
+                    for (let i = 0; i < pos.length; i += 3) {
+                        pos[i + 1] -= 0.02; // Sinking snow
+                        if (pos[i + 1] < -50) pos[i + 1] = 50;
+                    }
+                    particles.geometry.attributes.position.needsUpdate = true;
+                }
+
+                // Creatures Update
+                for (let i = creatures.length - 1; i >= 0; i--) {
+                    const c = creatures[i];
+                    c.update(time, delta, creatures);
+                    if (c.isDead()) {
+                        c.destroy();
+                        creatures.splice(i, 1);
+                    }
+                }
+
+                renderer.render(scene, camera);
+            }
+
+            initScene();
+            initInteraction();
         })();
     </script>
 </body>
