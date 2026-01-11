@@ -147,25 +147,26 @@
 
             // --- RIBBON ENTITY ---
             class Creature {
-                constructor(x, y, color, scene) {
+                constructor(initialPoints, color, scene) {
                     this.scene = scene;
                     this.points = [];
-                    this.targetPoints = [];
-                    this.segments = 30;
+                    this.segments = initialPoints.length;
                     this.color = new THREE.Color(color);
                     this.energy = 1.0;
-                    this.decay = 0.001 + Math.random() * 0.0015;
-                    this.pos = new THREE.Vector2(x, y);
-                    this.vel = new THREE.Vector2(0, 0);
-                    this.angle = Math.random() * Math.PI * 2;
-                    this.speed = 0.03 + Math.random() * 0.03;
-                    this.noiseSeed = Math.random() * 100;
+                    this.decay = 0.0008 + Math.random() * 0.0012;
 
+                    // Initial skeleton from user drawing
                     for (let i = 0; i < this.segments; i++) {
-                        this.points.push(new THREE.Vector3(x, y, 0));
+                        this.points.push(initialPoints[i].clone());
                     }
 
-                    // Create Ribbon Mesh (Using custom geometry for thickness)
+                    this.pos = initialPoints[0].clone();
+                    this.vel = new THREE.Vector2(0, 0);
+                    this.angle = Math.random() * Math.PI * 2;
+                    this.speed = 0.02 + Math.random() * 0.04;
+                    this.noiseSeed = Math.random() * 100;
+
+                    // Create Ribbon Mesh
                     this.geometry = new THREE.BufferGeometry();
                     const vertices = new Float32Array(this.segments * 2 * 3);
                     this.geometry.setAttribute('position', new THREE.BufferAttribute(vertices, 3));
@@ -178,12 +179,9 @@
                         },
                         vertexShader: `
                             varying vec2 vUv;
-                            varying float vAlpha;
                             void main() {
                                 vUv = uv;
-                                vAlpha = position.z; // Use Z to store alpha/thickness info
-                                vec4 mvPosition = modelViewMatrix * vec4(position.xy, 0.0, 1.0);
-                                gl_Position = projectionMatrix * mvPosition;
+                                gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
                             }
                         `,
                         fragmentShader: `
@@ -191,16 +189,11 @@
                             uniform float uEnergy;
                             uniform float uTime;
                             varying vec2 vUv;
-                            varying float vAlpha;
                             void main() {
-                                // Core glow
                                 float glow1 = pow(1.0 - abs(vUv.y - 0.5) * 2.0, 5.0);
-                                // Soft outer aura
                                 float glow2 = pow(1.0 - abs(vUv.y - 0.5) * 2.0, 1.2) * 0.4;
-                                
                                 float pulse = 0.8 + 0.2 * sin(uTime * 4.0 + vUv.x * 5.0);
                                 vec3 finalColor = mix(uColor, vec3(1.0), glow1 * 0.7);
-                                
                                 float alpha = (glow1 + glow2) * uEnergy * pulse * (1.0 - vUv.x);
                                 gl_FragColor = vec4(finalColor, alpha);
                             }
@@ -216,13 +209,12 @@
                 }
 
                 update(time, fluid) {
-                    // Physical Motion from Fluid
+                    // Lead movement
                     const fVel = fluid.getVelocity(this.pos.x, this.pos.y);
-                    this.vel.x += fVel.x * 0.15;
-                    this.vel.y += fVel.y * 0.15;
+                    this.vel.x += fVel.x * 0.12;
+                    this.vel.y += fVel.y * 0.12;
 
-                    // Autonomous Movement
-                    const noise = Math.sin(time * 1.5 + this.noiseSeed) * 0.04;
+                    const noise = Math.sin(time * 0.8 + this.noiseSeed) * 0.02;
                     this.angle += noise;
 
                     const moveX = Math.cos(this.angle) * this.speed;
@@ -230,39 +222,44 @@
                     this.pos.x += moveX + this.vel.x;
                     this.pos.y += moveY + this.vel.y;
 
-                    this.vel.multiplyScalar(0.96); // Viscosity
+                    this.vel.multiplyScalar(0.97);
 
-                    // Add own velocity back to fluid field
-                    fluid.addVelocity(this.pos.x, this.pos.y, moveX * 2.5, moveY * 2.5, 2);
-
-                    // Update points (Leader-Follower with variable tension)
+                    // Re-orient the whole creature towards movement
                     const head = this.points[0];
-                    head.set(this.pos.x, this.pos.y, 0);
+                    const dx = this.pos.x - head.x;
+                    const dy = this.pos.y - head.y;
+                    head.x = this.pos.x;
+                    head.y = this.pos.y;
 
-                    const speedMag = Math.sqrt(moveX * moveX + moveY * moveY + this.vel.x * this.vel.x + this.vel.y * this.vel.y);
-                    const dynamicThickness = 0.18 + speedMag * 2.5;
+                    fluid.addVelocity(this.pos.x, this.pos.y, dx * 3, dy * 3, 2);
 
+                    // Social behavior (simple wiggle along body)
                     for (let i = 1; i < this.segments; i++) {
                         const p = this.points[i];
                         const prev = this.points[i - 1];
-                        const tension = 0.2 + (i / this.segments) * 0.15;
-                        p.x = lerp(p.x, prev.x, tension);
-                        p.y = lerp(p.y, prev.y, tension);
+
+                        const targetX = prev.x;
+                        const targetY = prev.y;
+
+                        // Wiggle effect
+                        const wiggle = Math.sin(time * 3 + i * 0.2) * 0.02;
+                        p.x = lerp(p.x, targetX, 0.15) + wiggle;
+                        p.y = lerp(p.y, targetY, 0.15);
                     }
 
-                    // Update Geometry (Ribbon Mesh generation with organic tapering)
+                    // Update Topology mesh
                     const attr = this.geometry.attributes.position;
+                    const baseThickness = 0.2;
+
                     for (let i = 0; i < this.segments; i++) {
                         const p = this.points[i];
                         const prev = i > 0 ? this.points[i - 1] : (i < this.segments - 1 ? this.points[i + 1] : p);
-                        const dx = p.x - prev.x;
-                        const dy = p.y - prev.y;
-                        const len = Math.sqrt(dx * dx + dy * dy) || 0.001;
-                        const nx = -dy / len;
-                        const ny = dx / len;
+                        const angle = Math.atan2(p.y - prev.y, p.x - prev.x);
+                        const nx = Math.sin(angle);
+                        const ny = -Math.cos(angle);
 
-                        const taper = Math.pow(1.0 - i / this.segments, 0.85);
-                        const currentThickness = dynamicThickness * taper;
+                        const taper = Math.pow(1.0 - i / this.segments, 0.7);
+                        const currentThickness = baseThickness * taper;
 
                         attr.setXYZ(i * 2, p.x + nx * currentThickness, p.y + ny * currentThickness, 1.0);
                         attr.setXYZ(i * 2 + 1, p.x - nx * currentThickness, p.y - ny * currentThickness, 1.0);
@@ -292,16 +289,18 @@
                     this.mouse = new THREE.Vector2();
                     this.prevMouse = new THREE.Vector2();
                     this.isDown = false;
+                    this.isDrawing = false;
+                    this.currentStroke = [];
                     this.time = 0;
                     this.phase = 0;
 
                     this.init();
                     this.animate();
 
-                    setTimeout(() => {
+                    window.addEventListener('load', () => {
                         this.introText.classList.add('visible');
                         this.phase = 1;
-                    }, 1000);
+                    });
                 }
 
                 init() {
@@ -374,44 +373,72 @@
                         depthWrite: false,
                         blending: THREE.AdditiveBlending
                     });
-                    this.haze = new THREE.Mesh(hazeGeo, hazeMat);
                     this.haze.position.z = -15; // Far back
                     this.scene.add(this.haze);
+
+                    // Preview Line for drawing
+                    const previewGeo = new THREE.BufferGeometry();
+                    const previewPos = new Float32Array(500 * 3);
+                    previewGeo.setAttribute('position', new THREE.BufferAttribute(previewPos, 3));
+                    this.previewLine = new THREE.Line(previewGeo, new THREE.LineBasicMaterial({ color: 0xFFFFFF, transparent: true, opacity: 0.5 }));
+                    this.scene.add(this.previewLine);
                 }
 
                 bindEvents() {
-                    const updateM = (e) => {
-                        this.prevMouse.copy(this.mouse);
-                        this.mouse.x = (e.clientX / window.innerWidth) * 2 - 1;
-                        this.mouse.y = -(e.clientY / window.innerHeight) * 2 + 1;
+                    const getPoint = (e) => {
+                        const v = new THREE.Vector3((e.clientX / window.innerWidth) * 2 - 1, -(e.clientY / window.innerHeight) * 2 + 1, 0.5).unproject(this.camera);
+                        const dir = v.sub(this.camera.position).normalize();
+                        return this.camera.position.clone().add(dir.multiplyScalar(-this.camera.position.z / dir.z));
                     };
+
                     const start = (e) => {
                         this.isDown = true;
-                        updateM(e);
+                        this.currentStroke = [];
                         if (this.phase === 1) {
                             this.phase = 2;
                             this.introText.classList.remove('visible');
                         }
-                        this.spawn(3);
                     };
                     const move = (e) => {
-                        updateM(e);
                         if (this.isDown) {
-                            this.spawn(1);
-                            // Add velocity to fluid
-                            const dx = (this.mouse.x - this.prevMouse.x) * 10;
-                            const dy = (this.mouse.y - this.prevMouse.y) * 10;
-                            this.fluid.addVelocity(this.mouse.x * 12, this.mouse.y * 12, dx, dy, 3);
+                            const p = getPoint(e.touches ? e.touches[0] : e);
+                            this.currentStroke.push(p);
+                            if (this.currentStroke.length > 500) this.currentStroke.shift();
+
+                            // Update preview line
+                            const pos = this.previewLine.geometry.attributes.position.array;
+                            for (let i = 0; i < this.currentStroke.length; i++) {
+                                pos[i * 3] = this.currentStroke[i].x;
+                                pos[i * 3 + 1] = this.currentStroke[i].y;
+                                pos[i * 3 + 2] = this.currentStroke[i].z;
+                            }
+                            this.previewLine.geometry.setDrawRange(0, this.currentStroke.length);
+                            this.previewLine.geometry.attributes.position.needsUpdate = true;
+
+                            // Add fluid velocity from brush
+                            if (this.currentStroke.length > 1) {
+                                const head = this.currentStroke[this.currentStroke.length - 1];
+                                const prev = this.currentStroke[this.currentStroke.length - 2];
+                                this.fluid.addVelocity(head.x, head.y, (head.x - prev.x) * 5, (head.y - prev.y) * 5, 2);
+                            }
                         }
                     };
-                    const end = () => this.isDown = false;
+                    const end = () => {
+                        if (this.isDown && this.currentStroke.length > 5) {
+                            this.spawnFromStroke();
+                        }
+                        this.isDown = false;
+                        this.currentStroke = [];
+                        this.previewLine.geometry.setDrawRange(0, 0);
+                    };
 
                     window.addEventListener('mousedown', start);
                     window.addEventListener('mousemove', move);
                     window.addEventListener('mouseup', end);
-                    window.addEventListener('touchstart', (e) => start(e.touches[0]));
-                    window.addEventListener('touchmove', (e) => move(e.touches[0]));
+                    window.addEventListener('touchstart', (e) => { e.preventDefault(); start(e.touches[0]); }, { passive: false });
+                    window.addEventListener('touchmove', (e) => { e.preventDefault(); move(e.touches[0]); }, { passive: false });
                     window.addEventListener('touchend', end);
+
                     window.addEventListener('resize', () => {
                         this.camera.aspect = window.innerWidth / window.innerHeight;
                         this.camera.updateProjectionMatrix();
@@ -419,15 +446,31 @@
                     });
                 }
 
-                spawn(count) {
+                spawnFromStroke() {
                     if (this.creatures.length > CREATURE_LIMIT) return;
-                    const v = new THREE.Vector3(this.mouse.x, this.mouse.y, 0.5).unproject(this.camera);
-                    const dir = v.sub(this.camera.position).normalize();
-                    const p = this.camera.position.clone().add(dir.multiplyScalar(-this.camera.position.z / dir.z));
 
+                    // Resample stroke to a manageable number of segments (e.g., 30)
+                    const resampled = [];
+                    const steps = 30;
+                    for (let i = 0; i < steps; i++) {
+                        const t = i / (steps - 1);
+                        const idx = Math.floor(t * (this.currentStroke.length - 1));
+                        resampled.push(this.currentStroke[idx].clone());
+                    }
+
+                    const color = COLORS[Math.floor(Math.random() * COLORS.length)];
+                    this.creatures.push(new Creature(resampled, color, this.scene));
+
+                    this.spawnBurst(resampled[0].x, resampled[0].y, 10);
+                }
+
+                spawnBurst(x, y, count) {
                     for (let i = 0; i < count; i++) {
-                        const color = COLORS[Math.floor(Math.random() * COLORS.length)];
-                        this.creatures.push(new Creature(p.x, p.y, color, this.scene));
+                        const px = x + (Math.random() - 0.5);
+                        const py = y + (Math.random() - 0.5);
+                        const p = [];
+                        for (let j = 0; j < 10; j++) p.push(new THREE.Vector3(px, py, 0));
+                        // this.creatures.push(new Creature(p, COLORS[0], this.scene)); // Burst not needed or different
                     }
                 }
 
