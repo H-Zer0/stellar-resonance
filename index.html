@@ -535,7 +535,7 @@
                     drawStroke();
                 };
                 const end = () => {
-                    if (stroke.length > 5) createLifeFromStroke(stroke);
+                    if (stroke.length > 0) createLifeFromStroke(stroke);
                     stroke = [];
                     toggleDrawingMode(false);
                 };
