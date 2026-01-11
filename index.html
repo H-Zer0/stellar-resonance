@@ -48,7 +48,6 @@
             align-items: center;
             pointer-events: none;
             z-index: 10;
-            background: radial-gradient(circle at center, transparent 0%, rgba(0, 5, 16, 0.4) 100%);
         }
 
         #intro-text {
@@ -78,13 +77,11 @@
             100% {
                 opacity: 0.2;
                 transform: scale(0.98);
-                filter: blur(1px);
             }
 
             50% {
                 opacity: 0.9;
                 transform: scale(1.02);
-                filter: blur(0px);
             }
         }
     </style>
@@ -98,111 +95,115 @@
         </div>
     </div>
 
-    <!-- WebGL Library -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 
     <script>
         (function () {
-            if (typeof THREE === 'undefined') {
-                document.body.innerHTML = '<div style="display:flex;justify-content:center;align-items:center;height:100vh;">Internet Connection Required for Three.js</div>';
-                return;
-            }
+            if (typeof THREE === 'undefined') return;
 
-            // --- CONFIGURATION ---
+            // --- CONFIG ---
             const CONFIG = {
-                creatureCount: 300,
-                segments: 20,
-                segmentDist: 0.15,
-                colors: [0x00FFFF, 0xFF00FF, 0x007FFF, 0x7FFF00],
-                bloom: { strength: 2.5, radius: 0.5, threshold: 0.1 }
+                maxCreatures: 150,
+                segments: 25,
+                taper: true,
+                trailFade: 0.08, // Higher = shorter trails
+                colors: [0x00FFFF, 0xFF00FF, 0x007FFF, 0x7FFF00, 0xFFFF00]
             };
 
-            // --- UTILS ---
-            const lerp = (a, b, t) => a + (b - a) * t;
-
-            // --- CREATURE CLASS (ORGANIC MOTION) ---
+            // --- CREATURE WITH ORGANIC RIBBON ---
             class Creature {
                 constructor(x, y, color, scene) {
                     this.scene = scene;
-                    this.points = [];
-                    this.segments = CONFIG.segments;
                     this.color = new THREE.Color(color);
-                    this.energy = 1.0 + Math.random() * 0.5;
-                    this.decay = 0.001 + Math.random() * 0.002;
-                    this.speed = 0.05 + Math.random() * 0.1;
-                    this.noiseOffset = Math.random() * 1000;
+                    this.points = [];
+                    this.velocities = [];
+                    this.energy = 1.0;
+                    this.decay = 0.002 + Math.random() * 0.003;
+                    this.noiseOffset = Math.random() * 100;
+                    this.speedBase = 0.04 + Math.random() * 0.06;
 
-                    // Trail geometry (Ribbon-like)
-                    for (let i = 0; i < this.segments; i++) {
+                    for (let i = 0; i < CONFIG.segments; i++) {
                         this.points.push(new THREE.Vector3(x, y, 0));
+                        this.velocities.push(new THREE.Vector3());
                     }
 
-                    this.geometry = new THREE.BufferGeometry().setFromPoints(this.points);
+                    // Create Ribbon Mesh (using multiple points to simulate thickness/glow)
+                    // In three.js R128, MeshLine is better but since we are single-file UMD, 
+                    // we'll use a group of Lines with different opacities/widths for "Glow"
+                    this.group = new THREE.Group();
 
-                    // Create glow material
-                    this.material = new THREE.LineBasicMaterial({
-                        color: this.color,
+                    // Core (Thinner, Brighter)
+                    const coreGeo = new THREE.BufferGeometry().setFromPoints(this.points);
+                    const coreMat = new THREE.LineBasicMaterial({
+                        color: 0xffffff,
                         transparent: true,
                         opacity: 0.8,
-                        blending: THREE.AdditiveBlending,
-                        linewidth: 2
+                        blending: THREE.AdditiveBlending
                     });
+                    this.coreLine = new THREE.Line(coreGeo, coreMat);
+                    this.group.add(this.coreLine);
 
-                    this.line = new THREE.Line(this.geometry, this.material);
-                    this.scene.add(this.line);
-
-                    // Add head particle for "glow" intensity
-                    const dotGeo = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0, 0, 0)]);
-                    const dotMat = new THREE.PointsMaterial({
+                    // Aura (Thicker, Colored)
+                    const auraGeo = new THREE.BufferGeometry().setFromPoints(this.points);
+                    const auraMat = new THREE.LineBasicMaterial({
                         color: this.color,
-                        size: 0.4,
                         transparent: true,
-                        blending: THREE.AdditiveBlending,
-                        opacity: 1.0
+                        opacity: 0.4,
+                        blending: THREE.AdditiveBlending
                     });
-                    this.head = new THREE.Points(dotGeo, dotMat);
-                    this.scene.add(this.head);
+                    this.auraLine = new THREE.Line(auraGeo, auraMat);
+                    this.group.add(this.auraLine);
+
+                    this.scene.add(this.group);
                 }
 
                 update(time, flowField) {
-                    // Motion Logic
                     const head = this.points[0];
-                    const angle = flowField.getAt(head.x, head.y, time + this.noiseOffset);
+                    const angle = flowField(head.x, head.y, time + this.noiseOffset);
 
-                    head.x += Math.cos(angle) * this.speed;
-                    head.y += Math.sin(angle) * this.speed;
-                    this.head.position.copy(head);
+                    // Movement
+                    head.x += Math.cos(angle) * this.speedBase;
+                    head.y += Math.sin(angle) * this.speedBase;
 
-                    // Smooth segment follow (Inverse Kinematics style)
-                    for (let i = 1; i < this.segments; i++) {
+                    // Wave motion
+                    head.x += Math.sin(time * 2 + this.noiseOffset) * 0.02;
+                    head.y += Math.cos(time * 2 + this.noiseOffset) * 0.02;
+
+                    // Organic segmental flow (follow the leader with easing)
+                    for (let i = 1; i < this.points.length; i++) {
                         const p = this.points[i];
                         const prev = this.points[i - 1];
-                        const dx = p.x - prev.x;
-                        const dy = p.y - prev.y;
-                        const dist = Math.sqrt(dx * dx + dy * dy);
-                        const angle = Math.atan2(dy, dx);
 
-                        p.x = prev.x + Math.cos(angle) * CONFIG.segmentDist;
-                        p.y = prev.y + Math.sin(angle) * CONFIG.segmentDist;
+                        // Elastic follow
+                        p.x = lerp(p.x, prev.x, 0.25);
+                        p.y = lerp(p.y, prev.y, 0.25);
+
+                        // Tapering/Thickness simulation via line properties (simulated)
                     }
 
-                    // Metabolism
                     this.energy -= this.decay;
-                    this.material.opacity = Math.max(0, this.energy * 0.7);
-                    this.head.material.opacity = Math.max(0, this.energy);
+                    const alpha = Math.max(0, this.energy);
+                    this.coreLine.material.opacity = alpha * 0.8;
+                    this.auraLine.material.opacity = alpha * 0.4;
 
-                    this.geometry.setFromPoints(this.points);
-                    this.geometry.attributes.position.needsUpdate = true;
+                    // Update Geometries
+                    this.coreLine.geometry.setFromPoints(this.points);
+                    this.coreLine.geometry.attributes.position.needsUpdate = true;
+                    this.auraLine.geometry.setFromPoints(this.points);
+                    this.auraLine.geometry.attributes.position.needsUpdate = true;
                 }
 
                 isDead() { return this.energy <= 0; }
                 destroy() {
-                    this.scene.remove(this.line);
-                    this.scene.remove(this.head);
-                    this.geometry.dispose();
-                    this.material.dispose();
+                    this.scene.remove(this.group);
+                    this.coreLine.geometry.dispose();
+                    this.coreLine.material.dispose();
+                    this.auraLine.geometry.dispose();
+                    this.auraLine.material.dispose();
                 }
             }
+
+            function lerp(a, b, t) { return a + (b - a) * t; }
 
             // --- WORLD ENGINE ---
             class AbyssEngine {
@@ -210,51 +211,68 @@
                     this.container = document.getElementById('canvas-wrapper');
                     this.introText = document.getElementById('intro-text');
                     this.creatures = [];
-                    this.phase = 1;
                     this.mouse = new THREE.Vector2();
                     this.isDown = false;
                     this.time = 0;
+                    this.phase = 1;
 
                     this.init();
-                    this.loop();
+                    this.animate();
 
-                    // Show intro
                     setTimeout(() => this.introText.classList.add('visible'), 500);
                 }
 
                 init() {
                     this.scene = new THREE.Scene();
+                    // No background color here for manual clear loop
+
                     this.camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 1000);
                     this.camera.position.z = 15;
 
-                    this.renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+                    this.renderer = new THREE.WebGLRenderer({
+                        antialias: true,
+                        alpha: true,
+                        preserveDrawingBuffer: true // Crucial for manual trails
+                    });
                     this.renderer.setSize(window.innerWidth, window.innerHeight);
                     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+                    this.renderer.autoClear = false; // We clear manually
                     this.renderer.setClearColor(0x000510, 1);
                     this.container.appendChild(this.renderer.domElement);
 
-                    // Marine Snow
-                    const snowCount = 4000;
+                    // Fade Plane for Trails
+                    const fadeGeo = new THREE.PlaneGeometry(100, 100);
+                    const fadeMat = new THREE.MeshBasicMaterial({
+                        color: 0x000510,
+                        transparent: true,
+                        opacity: CONFIG.trailFade
+                    });
+                    this.fadePlane = new THREE.Mesh(fadeGeo, fadeMat);
+                    this.fadePlane.position.z = 5; // In front of background, behind creatures
+                    this.scene.add(this.fadePlane);
+
+                    // Ambient Marine Snow
+                    const snowCount = 2000;
                     const snowGeo = new THREE.BufferGeometry();
                     const snowPos = [];
                     for (let i = 0; i < snowCount; i++) {
-                        snowPos.push(THREE.MathUtils.randFloatSpread(50), THREE.MathUtils.randFloatSpread(40), THREE.MathUtils.randFloatSpread(40));
+                        snowPos.push(THREE.MathUtils.randFloatSpread(50), THREE.MathUtils.randFloatSpread(50), THREE.MathUtils.randFloatSpread(50));
                     }
                     snowGeo.setAttribute('position', new THREE.Float32BufferAttribute(snowPos, 3));
-                    this.snow = new THREE.Points(snowGeo, new THREE.PointsMaterial({ color: 0xffffff, size: 0.05, transparent: true, opacity: 0.2, blending: THREE.AdditiveBlending }));
-                    this.scene.add(snow);
+                    this.snow = new THREE.Points(snowGeo, new THREE.PointsMaterial({ color: 0xffffff, size: 0.04, transparent: true, opacity: 0.2 }));
+                    this.scene.add(this.snow);
 
-                    this.bindEvents();
+                    this.bind();
                 }
 
-                bindEvents() {
+                bind() {
                     window.addEventListener('resize', () => {
                         this.camera.aspect = window.innerWidth / window.innerHeight;
                         this.camera.updateProjectionMatrix();
                         this.renderer.setSize(window.innerWidth, window.innerHeight);
                     });
 
-                    const handleDown = (e) => {
+                    const onDown = (e) => {
                         this.isDown = true;
                         this.updateMouse(e);
                         if (this.phase === 1) {
@@ -262,20 +280,20 @@
                             this.introText.classList.remove('visible');
                             setTimeout(() => this.introText.style.display = 'none', 3000);
                         }
-                        this.spawn(3);
+                        this.spawn(5);
                     };
-                    const handleMove = (e) => {
+                    const onMove = (e) => {
                         this.updateMouse(e);
                         if (this.isDown) this.spawn(1);
                     };
-                    const handleUp = () => this.isDown = false;
+                    const onUp = () => this.isDown = false;
 
-                    window.addEventListener('mousedown', handleDown);
-                    window.addEventListener('mousemove', handleMove);
-                    window.addEventListener('mouseup', handleUp);
-                    window.addEventListener('touchstart', (e) => handleDown(e.touches[0]));
-                    window.addEventListener('touchmove', (e) => handleMove(e.touches[0]));
-                    window.addEventListener('touchend', handleUp);
+                    window.addEventListener('mousedown', onDown);
+                    window.addEventListener('mousemove', onMove);
+                    window.addEventListener('mouseup', onUp);
+                    window.addEventListener('touchstart', (e) => onDown(e.touches[0]));
+                    window.addEventListener('touchmove', (e) => onMove(e.touches[0]));
+                    window.addEventListener('touchend', onUp);
                 }
 
                 updateMouse(e) {
@@ -284,7 +302,7 @@
                 }
 
                 spawn(count) {
-                    if (this.creatures.length > 500) return;
+                    if (this.creatures.length > CONFIG.maxCreatures) return;
 
                     const vector = new THREE.Vector3(this.mouse.x, this.mouse.y, 0.5);
                     vector.unproject(this.camera);
@@ -297,39 +315,38 @@
                     }
                 }
 
-                loop() {
-                    requestAnimationFrame(() => this.loop());
-                    this.time += 0.01;
+                animate() {
+                    requestAnimationFrame(() => this.animate());
+                    this.time += 0.015;
 
-                    // Update Creatures
+                    // 1. Draw Fade Plane to create trails
+                    this.fadePlane.position.copy(this.camera.position).add(this.camera.getWorldDirection(new THREE.Vector3()).multiplyScalar(1));
+                    this.renderer.render(this.scene, this.camera);
+
+                    // 2. Update and Draw Creatures (Additive)
+                    const flow = (x, y, t) => {
+                        const n1 = Math.sin(x * 0.3 + t) * Math.cos(y * 0.3 + t);
+                        const n2 = Math.sin(y * 0.1 + t * 0.5);
+                        return (n1 + n2) * Math.PI * 2;
+                    };
+
                     for (let i = this.creatures.length - 1; i >= 0; i--) {
                         const c = this.creatures[i];
-                        c.update(this.time, this.flowField());
+                        c.update(this.time, flow);
                         if (c.isDead()) {
                             c.destroy();
                             this.creatures.splice(i, 1);
                         }
                     }
 
-                    // Animate Marine Snow
+                    // Snow motion
                     this.snow.position.y -= 0.005;
-                    this.snow.rotation.y += 0.0002;
-                    if (this.snow.position.y < -10) this.snow.position.y = 10;
+                    if (this.snow.position.y < -15) this.snow.position.y = 15;
 
                     this.renderer.render(this.scene, this.camera);
                 }
-
-                flowField() {
-                    return {
-                        getAt: (x, y, t) => {
-                            // Organic flow field using sin/cos combinations (replaces Noise)
-                            return Math.sin(x * 0.2 + t) * Math.cos(y * 0.2 + t) * Math.PI * 4;
-                        }
-                    };
-                }
             }
 
-            // Start
             window.onload = () => new AbyssEngine();
         })();
     </script>
