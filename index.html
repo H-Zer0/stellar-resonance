@@ -4,17 +4,16 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>DEEP SEA SYMBIOSIS | Abyss Evolution</title>
+    <title>DEEP SEA SYMBIOSIS | Next-Gen Abyss</title>
     <style>
         :root {
-            --deep-sea-bg: #000510;
+            --bg: #000510;
         }
 
         * {
             margin: 0;
             padding: 0;
             box-sizing: border-box;
-            outline: none;
         }
 
         body,
@@ -22,27 +21,21 @@
             width: 100%;
             height: 100%;
             overflow: hidden;
-            background-color: var(--deep-sea-bg);
+            background: var(--bg);
             color: white;
-            font-family: "Optima", "Inter", "Noto Sans JP", sans-serif;
+            font-family: "Optima", serif;
             cursor: crosshair;
         }
 
         #canvas-wrapper {
             position: absolute;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
+            inset: 0;
             z-index: 1;
         }
 
         #overlay {
             position: absolute;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
+            inset: 0;
             display: flex;
             justify-content: center;
             align-items: center;
@@ -51,19 +44,15 @@
         }
 
         #intro-text {
-            font-size: clamp(1rem, 4vw, 1.2rem);
+            font-size: 1.2rem;
             letter-spacing: 0.8rem;
-            color: rgba(255, 255, 255, 0.9);
             opacity: 0;
-            transition: opacity 3s ease, transform 3s ease;
-            text-shadow: 0 0 30px rgba(0, 255, 255, 0.8);
-            z-index: 11;
-            font-weight: 200;
-            transform: translateY(10px);
+            transition: opacity 3s, transform 3s;
+            text-shadow: 0 0 20px rgba(0, 255, 255, 0.5);
         }
 
         #intro-text.visible {
-            opacity: 0.8;
+            opacity: 0.7;
             transform: translateY(0);
         }
 
@@ -76,146 +65,219 @@
             0%,
             100% {
                 opacity: 0.2;
-                transform: scale(0.98);
             }
 
             50% {
-                opacity: 0.9;
-                transform: scale(1.02);
+                opacity: 0.8;
             }
         }
     </style>
 </head>
 
 <body>
-    <div id="container">
-        <div id="canvas-wrapper"></div>
-        <div id="overlay">
-            <div id="intro-text" class="breathing">闇をなぞる、生命が灯る</div>
-        </div>
+    <div id="canvas-wrapper"></div>
+    <div id="overlay">
+        <div id="intro-text" class="breathing">闇をなぞる、生命が灯る</div>
     </div>
 
-    <!-- Three.js UMD Build -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 
     <script>
         (function () {
             if (typeof THREE === 'undefined') return;
 
-            // --- CONFIG ---
-            const CONFIG = {
-                maxCreatures: 150,
-                segments: 28,
-                trailFade: 0.07, // Subtle feedback loop
-                colors: [0x00FFFF, 0xFF00FF, 0x007FFF, 0x7FFF00, 0xFFFF00]
-            };
+            // --- CONSTANTS ---
+            const GRID_SIZE = 64;
+            const CREATURE_LIMIT = 100;
+            const SNOW_COUNT = 3000;
+            const COLORS = [0x00FFFF, 0xFF00FF, 0x007FFF, 0x7FFF00, 0xFFFF00];
 
+            // --- UTILS ---
             const lerp = (a, b, t) => a + (b - a) * t;
 
-            // --- ORGANIC CREATURE ---
+            // --- FLUID FIELD (CPU Grid) ---
+            class FluidField {
+                constructor(size) {
+                    this.size = size;
+                    this.grid = new Float32Array(size * size * 2); // vx, vy
+                    this.density = new Float32Array(size * size);
+                }
+
+                addVelocity(x, y, vx, vy, radius = 2) {
+                    const gx = Math.floor(((x + 10) / 20) * this.size);
+                    const gy = Math.floor(((y + 10) / 20) * this.size);
+
+                    for (let i = -radius; i <= radius; i++) {
+                        for (let j = -radius; j <= radius; j++) {
+                            const nx = gx + i;
+                            const ny = gy + j;
+                            if (nx >= 0 && nx < this.size && ny >= 0 && ny < this.size) {
+                                const idx = (ny * this.size + nx) * 2;
+                                const weight = 1 / (1 + Math.sqrt(i * i + j * j));
+                                this.grid[idx] += vx * weight * 0.5;
+                                this.grid[idx + 1] += vy * weight * 0.5;
+                            }
+                        }
+                    }
+                }
+
+                update() {
+                    for (let i = 0; i < this.grid.length; i++) {
+                        this.grid[i] *= 0.98; // Dampening
+                    }
+                }
+
+                getVelocity(x, y) {
+                    const gx = Math.floor(((x + 15) / 30) * this.size);
+                    const gy = Math.floor(((y + 15) / 30) * this.size);
+                    if (gx < 0 || gx >= this.size || gy < 0 || gy >= this.size) return { x: 0, y: 0 };
+                    const idx = (gy * this.size + gx) * 2;
+                    return { x: this.grid[idx], y: this.grid[idx + 1] };
+                }
+            }
+
+            // --- RIBBON ENTITY ---
             class Creature {
                 constructor(x, y, color, scene) {
                     this.scene = scene;
-                    this.color = new THREE.Color(color);
                     this.points = [];
+                    this.targetPoints = [];
+                    this.segments = 30;
+                    this.color = new THREE.Color(color);
                     this.energy = 1.0;
-                    this.decay = 0.0015 + Math.random() * 0.002;
-                    this.noiseOffset = Math.random() * 100;
-                    this.speedBase = 0.04 + Math.random() * 0.06;
-                    this.pulseSpeed = 2 + Math.random() * 3;
+                    this.decay = 0.001 + Math.random() * 0.0015;
+                    this.pos = new THREE.Vector2(x, y);
+                    this.vel = new THREE.Vector2(0, 0);
+                    this.angle = Math.random() * Math.PI * 2;
+                    this.speed = 0.03 + Math.random() * 0.03;
+                    this.noiseSeed = Math.random() * 100;
 
-                    for (let i = 0; i < CONFIG.segments; i++) {
+                    for (let i = 0; i < this.segments; i++) {
                         this.points.push(new THREE.Vector3(x, y, 0));
                     }
 
-                    this.group = new THREE.Group();
+                    // Create Ribbon Mesh (Using custom geometry for thickness)
+                    this.geometry = new THREE.BufferGeometry();
+                    const vertices = new Float32Array(this.segments * 2 * 3);
+                    this.geometry.setAttribute('position', new THREE.BufferAttribute(vertices, 3));
 
-                    // Core (White Light)
-                    const coreGeo = new THREE.BufferGeometry().setFromPoints(this.points);
-                    const coreMat = new THREE.LineBasicMaterial({
-                        color: 0xffffff,
+                    this.material = new THREE.ShaderMaterial({
+                        uniforms: {
+                            uColor: { value: this.color },
+                            uEnergy: { value: this.energy },
+                            uTime: { value: 0 }
+                        },
+                        vertexShader: `
+                            varying vec2 vUv;
+                            varying float vAlpha;
+                            void main() {
+                                vUv = uv;
+                                vAlpha = position.z; // Use Z to store alpha/thickness info
+                                vec4 mvPosition = modelViewMatrix * vec4(position.xy, 0.0, 1.0);
+                                gl_Position = projectionMatrix * mvPosition;
+                            }
+                        `,
+                        fragmentShader: `
+                            uniform vec3 uColor;
+                            uniform float uEnergy;
+                            uniform float uTime;
+                            varying vec2 vUv;
+                            varying float vAlpha;
+                            void main() {
+                                float glow = pow(1.0 - abs(vUv.y - 0.5) * 2.0, 3.0);
+                                float pulse = 0.8 + 0.2 * sin(uTime * 5.0 + vUv.x * 10.0);
+                                vec3 finalColor = mix(uColor, vec3(1.0), glow * 0.5);
+                                gl_FragColor = vec4(finalColor, uEnergy * glow * pulse * (1.0 - vUv.x));
+                            }
+                        `,
                         transparent: true,
-                        opacity: 0.8,
-                        blending: THREE.AdditiveBlending
+                        blending: THREE.AdditiveBlending,
+                        side: THREE.DoubleSide,
+                        depthWrite: false
                     });
-                    this.coreLine = new THREE.Line(coreGeo, coreMat);
-                    this.group.add(this.coreLine);
 
-                    // Aura (Volume/Color)
-                    const auraGeo = new THREE.BufferGeometry().setFromPoints(this.points);
-                    const auraMat = new THREE.LineBasicMaterial({
-                        color: this.color,
-                        transparent: true,
-                        opacity: 0.3,
-                        blending: THREE.AdditiveBlending
-                    });
-                    this.auraLine = new THREE.Line(auraGeo, auraMat);
-                    this.group.add(this.auraLine);
-
-                    this.scene.add(this.group);
+                    this.mesh = new THREE.Mesh(this.geometry, this.material);
+                    this.scene.add(this.mesh);
                 }
 
-                update(time, flowField) {
+                update(time, fluid) {
+                    // Physical Motion
+                    const fVel = fluid.getVelocity(this.pos.x, this.pos.y);
+                    this.vel.x += fVel.x * 0.1;
+                    this.vel.y += fVel.y * 0.1;
+
+                    const noise = Math.sin(time * 2 + this.noiseSeed) * 0.02;
+                    this.angle += noise;
+                    this.pos.x += Math.cos(this.angle) * this.speed + this.vel.x;
+                    this.pos.y += Math.sin(this.angle) * this.speed + this.vel.y;
+
+                    this.vel.multiplyScalar(0.95); // Friction
+
+                    // Update points (Leader-Follower)
                     const head = this.points[0];
-                    const angle = flowField(head.x, head.y, time + this.noiseOffset);
+                    const prevPos = { x: head.x, y: head.y };
+                    head.set(this.pos.x, this.pos.y, 0);
 
-                    // Main movement
-                    head.x += Math.cos(angle) * this.speedBase;
-                    head.y += Math.sin(angle) * this.speedBase;
+                    fluid.addVelocity(head.x, head.y, head.x - prevPos.x, head.y - prevPos.y, 1);
 
-                    // Organic S-curve (Wobble)
-                    const wobble = Math.sin(time * 3 + this.noiseOffset) * 0.03;
-                    head.x += Math.cos(angle + Math.PI / 2) * wobble;
-                    head.y += Math.sin(angle + Math.PI / 2) * wobble;
-
-                    // Elastic follow
-                    for (let i = 1; i < this.points.length; i++) {
+                    for (let i = 1; i < this.segments; i++) {
                         const p = this.points[i];
                         const prev = this.points[i - 1];
-                        p.x = lerp(p.x, prev.x, 0.35);
-                        p.y = lerp(p.y, prev.y, 0.35);
-                        p.z = lerp(p.z, prev.z, 0.35);
+                        p.x = lerp(p.x, prev.x, 0.25);
+                        p.y = lerp(p.y, prev.y, 0.25);
                     }
 
+                    // Update Geometry (Ribbon Mesh generation)
+                    const attr = this.geometry.attributes.position;
+                    for (let i = 0; i < this.segments; i++) {
+                        const p = this.points[i];
+                        const prev = i > 0 ? this.points[i - 1] : this.points[i + 1];
+                        const dx = p.x - prev.x;
+                        const dy = p.y - prev.y;
+                        const len = Math.sqrt(dx * dx + dy * dy) || 1;
+                        const nx = -dy / len;
+                        const ny = dx / len;
+
+                        const thickness = 0.15 * (1.0 - i / this.segments);
+
+                        attr.setXYZ(i * 2, p.x + nx * thickness, p.y + ny * thickness, 1.0);
+                        attr.setXYZ(i * 2 + 1, p.x - nx * thickness, p.y - ny * thickness, 1.0);
+                    }
+                    attr.needsUpdate = true;
+
                     this.energy -= this.decay;
-
-                    // Pulsating glow
-                    const pulse = (Math.sin(time * this.pulseSpeed) + 1) * 0.5;
-                    const alpha = Math.max(0, this.energy);
-                    this.coreLine.material.opacity = alpha * (0.4 + pulse * 0.5);
-                    this.auraLine.material.opacity = alpha * (0.1 + pulse * 0.3);
-
-                    this.coreLine.geometry.setFromPoints(this.points);
-                    this.coreLine.geometry.attributes.position.needsUpdate = true;
-                    this.auraLine.geometry.setFromPoints(this.points);
-                    this.auraLine.geometry.attributes.position.needsUpdate = true;
+                    this.material.uniforms.uEnergy.value = this.energy;
+                    this.material.uniforms.uTime.value = time;
                 }
 
                 isDead() { return this.energy <= 0; }
                 destroy() {
-                    this.scene.remove(this.group);
-                    this.coreLine.geometry.dispose();
-                    this.coreLine.material.dispose();
-                    this.auraLine.geometry.dispose();
-                    this.auraLine.material.dispose();
+                    this.scene.remove(this.mesh);
+                    this.geometry.dispose();
+                    this.material.dispose();
                 }
             }
 
-            // --- ABYSS ENGINE ---
+            // --- MAIN ENGINE ---
             class AbyssEngine {
                 constructor() {
                     this.container = document.getElementById('canvas-wrapper');
                     this.introText = document.getElementById('intro-text');
                     this.creatures = [];
+                    this.fluid = new FluidField(GRID_SIZE);
                     this.mouse = new THREE.Vector2();
+                    this.prevMouse = new THREE.Vector2();
                     this.isDown = false;
                     this.time = 0;
-                    this.phase = 1;
+                    this.phase = 0;
 
                     this.init();
                     this.animate();
 
-                    setTimeout(() => this.introText.classList.add('visible'), 500);
+                    setTimeout(() => {
+                        this.introText.classList.add('visible');
+                        this.phase = 1;
+                    }, 1000);
                 }
 
                 init() {
@@ -223,52 +285,41 @@
                     this.camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 1000);
                     this.camera.position.z = 15;
 
-                    this.renderer = new THREE.WebGLRenderer({
-                        antialias: true,
-                        alpha: true,
-                        preserveDrawingBuffer: true
-                    });
+                    this.renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, preserveDrawingBuffer: true });
                     this.renderer.setSize(window.innerWidth, window.innerHeight);
                     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
                     this.renderer.autoClear = false;
                     this.renderer.setClearColor(0x000510, 1);
                     this.container.appendChild(this.renderer.domElement);
 
-                    // Fade Plane (Trails)
-                    const fadeGeo = new THREE.PlaneGeometry(100, 100);
-                    const fadeMat = new THREE.MeshBasicMaterial({
-                        color: 0x000510,
-                        transparent: true,
-                        opacity: CONFIG.trailFade
-                    });
-                    this.fadePlane = new THREE.Mesh(fadeGeo, fadeMat);
-                    this.fadePlane.position.z = 5;
+                    // Feedback trails
+                    this.fadePlane = new THREE.Mesh(
+                        new THREE.PlaneGeometry(100, 100),
+                        new THREE.MeshBasicMaterial({ color: 0x000510, transparent: true, opacity: 0.1 })
+                    );
+                    this.fadePlane.position.z = 1;
                     this.scene.add(this.fadePlane);
 
-                    // Marine Snow
-                    const snowCount = 3000;
+                    // Space Particles (Marine Snow)
                     const snowGeo = new THREE.BufferGeometry();
-                    const snowPos = [];
-                    for (let i = 0; i < snowCount; i++) {
-                        snowPos.push(THREE.MathUtils.randFloatSpread(50), THREE.MathUtils.randFloatSpread(50), THREE.MathUtils.randFloatSpread(50));
-                    }
-                    snowGeo.setAttribute('position', new THREE.Float32BufferAttribute(snowPos, 3));
-                    this.snow = new THREE.Points(snowGeo, new THREE.PointsMaterial({ color: 0xffffff, size: 0.04, transparent: true, opacity: 0.2 }));
+                    const snowPos = new Float32Array(SNOW_COUNT * 3);
+                    for (let i = 0; i < SNOW_COUNT * 3; i++) snowPos[i] = THREE.MathUtils.randFloatSpread(50);
+                    snowGeo.setAttribute('position', new THREE.BufferAttribute(snowPos, 3));
+                    this.snow = new THREE.Points(snowGeo, new THREE.PointsMaterial({ color: 0x00FFFF, size: 0.03, transparent: true, opacity: 0.2 }));
                     this.scene.add(this.snow);
 
-                    // God Rays (GLSL Shader)
-                    const rayGeo = new THREE.PlaneGeometry(60, 60);
+                    // Atmosphere Rays
+                    const rayGeo = new THREE.PlaneGeometry(40, 40);
                     const rayMat = new THREE.ShaderMaterial({
-                        uniforms: { time: { value: 0 }, color: { value: new THREE.Color(0x007FFF) } },
+                        uniforms: { uTime: { value: 0 } },
                         vertexShader: `varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
                         fragmentShader: `
-                            uniform float time;
-                            uniform vec3 color;
+                            uniform float uTime;
                             varying vec2 vUv;
                             void main() {
-                                float alpha = (1.0 - vUv.y) * 0.15 * (0.6 + 0.4 * sin(vUv.x * 12.0 + time * 0.4));
-                                alpha *= (0.8 + 0.2 * sin(time * 0.1));
-                                gl_FragColor = vec4(color, alpha);
+                                float beam = sin(vUv.x * 20.0 + uTime * 0.5) * 0.5 + 0.5;
+                                float alpha = (1.0 - vUv.y) * 0.1 * beam;
+                                gl_FragColor = vec4(0.0, 0.5, 1.0, alpha);
                             }
                         `,
                         transparent: true,
@@ -276,89 +327,97 @@
                         side: THREE.DoubleSide
                     });
                     this.rays = new THREE.Mesh(rayGeo, rayMat);
-                    this.rays.position.set(0, 20, -10);
-                    this.rays.rotation.x = -Math.PI / 2.5;
+                    this.rays.position.set(0, 10, -5);
+                    this.rays.rotation.x = -Math.PI / 3;
                     this.scene.add(this.rays);
 
-                    this.bind();
+                    this.bindEvents();
                 }
 
-                bind() {
+                bindEvents() {
+                    const updateM = (e) => {
+                        this.prevMouse.copy(this.mouse);
+                        this.mouse.x = (e.clientX / window.innerWidth) * 2 - 1;
+                        this.mouse.y = -(e.clientY / window.innerHeight) * 2 + 1;
+                    };
+                    const start = (e) => {
+                        this.isDown = true;
+                        updateM(e);
+                        if (this.phase === 1) {
+                            this.phase = 2;
+                            this.introText.classList.remove('visible');
+                        }
+                        this.spawn(3);
+                    };
+                    const move = (e) => {
+                        updateM(e);
+                        if (this.isDown) {
+                            this.spawn(1);
+                            // Add velocity to fluid
+                            const dx = (this.mouse.x - this.prevMouse.x) * 10;
+                            const dy = (this.mouse.y - this.prevMouse.y) * 10;
+                            this.fluid.addVelocity(this.mouse.x * 12, this.mouse.y * 12, dx, dy, 3);
+                        }
+                    };
+                    const end = () => this.isDown = false;
+
+                    window.addEventListener('mousedown', start);
+                    window.addEventListener('mousemove', move);
+                    window.addEventListener('mouseup', end);
+                    window.addEventListener('touchstart', (e) => start(e.touches[0]));
+                    window.addEventListener('touchmove', (e) => move(e.touches[0]));
+                    window.addEventListener('touchend', end);
                     window.addEventListener('resize', () => {
                         this.camera.aspect = window.innerWidth / window.innerHeight;
                         this.camera.updateProjectionMatrix();
                         this.renderer.setSize(window.innerWidth, window.innerHeight);
                     });
-
-                    const onDown = (e) => {
-                        this.isDown = true;
-                        this.updateMouse(e);
-                        if (this.phase === 1) {
-                            this.phase = 2;
-                            this.introText.classList.remove('visible');
-                            setTimeout(() => this.introText.style.display = 'none', 3000);
-                        }
-                        this.spawn(5);
-                    };
-                    const onMove = (e) => {
-                        this.updateMouse(e);
-                        if (this.isDown) this.spawn(1);
-                    };
-                    const onUp = () => this.isDown = false;
-
-                    window.addEventListener('mousedown', onDown);
-                    window.addEventListener('mousemove', onMove);
-                    window.addEventListener('mouseup', onUp);
-                    window.addEventListener('touchstart', (e) => onDown(e.touches[0]));
-                    window.addEventListener('touchmove', (e) => onMove(e.touches[0]));
-                    window.addEventListener('touchend', onUp);
-                }
-
-                updateMouse(e) {
-                    this.mouse.x = (e.clientX / window.innerWidth) * 2 - 1;
-                    this.mouse.y = -(e.clientY / window.innerHeight) * 2 + 1;
                 }
 
                 spawn(count) {
-                    if (this.creatures.length > CONFIG.maxCreatures) return;
-                    const vector = new THREE.Vector3(this.mouse.x, this.mouse.y, 0.5);
-                    vector.unproject(this.camera);
-                    const dir = vector.sub(this.camera.position).normalize();
-                    const pos = this.camera.position.clone().add(dir.multiplyScalar(-this.camera.position.z / dir.z));
+                    if (this.creatures.length > CREATURE_LIMIT) return;
+                    const v = new THREE.Vector3(this.mouse.x, this.mouse.y, 0.5).unproject(this.camera);
+                    const dir = v.sub(this.camera.position).normalize();
+                    const p = this.camera.position.clone().add(dir.multiplyScalar(-this.camera.position.z / dir.z));
 
                     for (let i = 0; i < count; i++) {
-                        const color = CONFIG.colors[Math.floor(Math.random() * CONFIG.colors.length)];
-                        this.creatures.push(new Creature(pos.x, pos.y, color, this.scene));
+                        const color = COLORS[Math.floor(Math.random() * COLORS.length)];
+                        this.creatures.push(new Creature(p.x, p.y, color, this.scene));
                     }
                 }
 
                 animate() {
                     requestAnimationFrame(() => this.animate());
-                    this.time += 0.015;
+                    this.time += 0.016;
+                    this.fluid.update();
 
-                    // Final Flow Logic
-                    const flow = (x, y, t) => {
-                        const n = Math.sin(x * 0.2 + t) * Math.cos(y * 0.2 + t) + Math.sin(y * 0.1 + t * 0.5);
-                        return n * Math.PI * 2;
-                    };
-
-                    // Manual Trail Loop
+                    // Render Feedback
                     this.fadePlane.position.copy(this.camera.position).add(this.camera.getWorldDirection(new THREE.Vector3()).multiplyScalar(1));
                     this.renderer.render(this.scene, this.camera);
 
+                    // Update Entities
                     for (let i = this.creatures.length - 1; i >= 0; i--) {
                         const c = this.creatures[i];
-                        c.update(this.time, flow);
+                        c.update(this.time, this.fluid);
                         if (c.isDead()) {
                             c.destroy();
                             this.creatures.splice(i, 1);
                         }
                     }
 
-                    this.snow.position.y -= 0.005;
-                    this.snow.rotation.y += 0.0002;
-                    if (this.snow.position.y < -15) this.snow.position.y = 15;
-                    if (this.rays) this.rays.material.uniforms.time.value = this.time;
+                    // Snow Fluid Effect
+                    const pos = this.snow.geometry.attributes.position.array;
+                    for (let i = 0; i < SNOW_COUNT; i++) {
+                        const x = pos[i * 3];
+                        const y = pos[i * 3 + 1];
+                        const v = this.fluid.getVelocity(x, y);
+                        pos[i * 3] += v.x * 0.2;
+                        pos[i * 3 + 1] += v.y * 0.2 - 0.005; // Fall + fluid
+                        if (pos[i * 3 + 1] < -15) pos[i * 3 + 1] = 15;
+                    }
+                    this.snow.geometry.attributes.position.needsUpdate = true;
+
+                    if (this.rays) this.rays.material.uniforms.uTime.value = this.time;
 
                     this.renderer.render(this.scene, this.camera);
                 }
