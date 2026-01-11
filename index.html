@@ -266,7 +266,7 @@
 
                 // Fading Quad for Trails
                 const fadeGeo = new THREE.PlaneGeometry(2, 2);
-                const fadeMat = new THREE.MeshBasicMaterial({ color: 0x000510, transparent: true, opacity: 0.1 });
+                const fadeMat = new THREE.MeshBasicMaterial({ color: 0x000510, transparent: true, opacity: 0.04 }); // Much slower fade for artistic trails
                 fadeMesh = new THREE.Mesh(fadeGeo, fadeMat);
                 fadeMesh.material.depthTest = false;
                 fadeMesh.material.depthWrite = false;
@@ -277,13 +277,27 @@
             }
 
             function addEnvironment() {
-                // Marine Snow
-                const count = 2000;
+                // High Quality Marine Snow
+                const count = 3000;
                 const geo = new THREE.BufferGeometry();
                 const pos = new Float32Array(count * 3);
-                for (let i = 0; i < count * 3; i++) pos[i] = (Math.random() - 0.5) * 100;
+                const sizes = new Float32Array(count);
+                for (let i = 0; i < count; i++) {
+                    pos[i * 3] = (Math.random() - 0.5) * 150;
+                    pos[i * 3 + 1] = (Math.random() - 0.5) * 150;
+                    pos[i * 3 + 2] = (Math.random() - 0.5) * 150;
+                    sizes[i] = Math.random() * 2.5;
+                }
                 geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
-                const mat = new THREE.PointsMaterial({ color: 0x00ffff, size: 0.1, transparent: true, opacity: 0.3 });
+                geo.setAttribute('size', new THREE.BufferAttribute(sizes, 1));
+
+                const mat = new THREE.PointsMaterial({
+                    color: 0x00ffff,
+                    size: 0.2,
+                    transparent: true,
+                    opacity: 0.4,
+                    blending: THREE.AdditiveBlending
+                });
                 particles = new THREE.Points(geo, mat);
                 scene.add(particles);
 
@@ -462,59 +476,41 @@
                         if (progress >= 1.0 && this.age > (this.birthDuration + this.waitAfterBirth)) {
                             this.state = 'LIVE';
                         }
+                        // Don't move during birth
                     } else {
-                        // LIVE State: Organic Movement
+                        // LIVE State: Standard movement
                         this.wander();
                         this.separate(others);
-
-                        // Type specific behavior
-                        if (this.type === 'jelly') {
-                            // Vertical bobbing
-                            this.acc.y += Math.sin(time * 2.0) * 0.005;
-                            this.vel.multiplyScalar(0.98); // Higher drag for jelly
-                        }
-
                         this.vel.add(this.acc);
                         this.vel.clampLength(0.01, this.maxSpeed);
                         this.pos.add(this.vel);
                         this.acc.multiplyScalar(0);
 
                         // Soft boundary
-                        if (this.pos.length() > 70) this.acc.add(this.pos.clone().multiplyScalar(-0.001));
+                        if (this.pos.length() > 60) this.acc.add(this.pos.clone().multiplyScalar(-0.001));
                     }
 
-                    // Trail logic with wave displacement for Eels
+                    // Always update trail geometry
                     this.history.unshift(this.pos.clone());
                     if (this.history.length > this.segments) this.history.pop();
 
                     const attr = this.geometry.attributes.position;
-                    const baseT = this.type === 'jelly' ? 0.8 : (this.type === 'eel' ? 0.4 : 0.25);
+                    const baseT = this.type === 'jelly' ? 0.7 : (this.type === 'eel' ? 0.3 : 0.2);
 
                     for (let i = 0; i < this.segments; i++) {
-                        const p = this.history[i].clone();
+                        const p = this.history[i];
                         const prev = i > 0 ? this.history[i - 1] : (i < this.segments - 1 ? this.history[i + 1] : p);
                         const dir = p.clone().sub(prev).normalize();
                         const norm = new THREE.Vector3(-dir.y, dir.x, 0).normalize();
 
-                        // Apply procedural wave to the backbone points for more fluidity
-                        if (this.type === 'eel' || this.type === 'fish') {
-                            const wave = Math.sin(time * 6.0 - i * 0.5) * (i / this.segments) * 0.5;
-                            p.add(norm.clone().multiplyScalar(wave));
-                        }
-
                         let t = baseT * (1.0 - i / this.segments);
-                        if (this.type === 'jelly') t *= (1.2 + 0.4 * Math.sin(time * 4.0 - i * 0.2));
+                        if (this.type === 'jelly') t *= (1.0 + 0.3 * Math.sin(time * 2 + i * 0.5));
 
-                        attr.setXYZ(i * 2, p.x + norm.x * t, p.y + norm.y * t, p.z + norm.z * t);
-                        attr.setXYZ(i * 2 + 1, p.x - norm.x * t, p.y - norm.y * t, p.z - norm.z * t);
+                        attr.setXYZ(i * 2, p.x + norm.x * t, p.y + norm.y * t, p.z);
+                        attr.setXYZ(i * 2 + 1, p.x - norm.x * t, p.y - norm.y * t, p.z);
                     }
                     attr.needsUpdate = true;
                     this.material.uniforms.uTime.value = time;
-
-                    // Fade out near death
-                    if (this.age > 50) {
-                        this.material.uniforms.uAlpha.value = THREE.MathUtils.smoothstep(60 - this.age, 0, 10);
-                    }
                 }
 
                 wander() {
@@ -643,6 +639,27 @@
                 }
             }
 
+            function playBirthSound(color) {
+                if (!audioCtx || isMuted) return;
+                const chord = [261.63, 329.63, 392.00, 523.25]; // C Major
+                const freq = chord[Math.floor(Math.random() * chord.length)] * (1.0 + Math.random() * 0.1);
+
+                const osc = audioCtx.createOscillator();
+                const g = audioCtx.createGain();
+                osc.type = 'sine';
+                osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
+                osc.frequency.exponentialRampToValueAtTime(freq * 0.5, audioCtx.currentTime + 2.0);
+
+                g.gain.setValueAtTime(0, audioCtx.currentTime);
+                g.gain.linearRampToValueAtTime(0.1, audioCtx.currentTime + 0.1);
+                g.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 2.0);
+
+                osc.connect(g);
+                g.connect(audioCtx.destination);
+                osc.start();
+                osc.stop(audioCtx.currentTime + 2.0);
+            }
+
             function createLifeFromStroke(points) {
                 console.log('DRAW END', points.length);
 
@@ -666,6 +683,7 @@
                 creatures.push(creature);
 
                 createBirthFlash(worldPoints[0], creature.color);
+                playBirthSound(creature.color);
                 console.log(`[Birth] LIFE: ${creatures.length} TYPE: ${creature.type}`);
             }
 
