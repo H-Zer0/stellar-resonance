@@ -1,3 +1,9 @@
+import * as THREE from 'three';
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
+
 class Point {
     constructor(x, y, data) {
         this.x = x;
@@ -368,7 +374,12 @@ class DeepSeaSymbiosis {
     onMouseDown(e) {
         this.isMouseDown = true;
         this.updateMousePosition(e);
-        this.handlePhaseTransition();
+        if (this.phase === 1) {
+            this.handlePhaseTransition();
+        }
+        if (this.phase === 2) {
+            this.spawnCreature();
+        }
     }
 
     onMouseMove(e) {
@@ -389,6 +400,7 @@ class DeepSeaSymbiosis {
             setTimeout(() => {
                 this.introText.style.display = 'none';
             }, 2000);
+            console.log("Phase 1 -> 2: Life begins");
         }
     }
 
