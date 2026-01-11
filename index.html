@@ -144,10 +144,13 @@
         #drawing-overlay {
             position: absolute;
             inset: 0;
-            background: rgba(0, 5, 16, 0.8);
+            background: rgba(0, 5, 16, 0.5);
+            /* Lighter for visibility */
             display: none;
-            z-index: 20;
+            z-index: 100 !important;
+            /* Ensure it's on top of UI */
             cursor: crosshair;
+            pointer-events: auto;
         }
 
         #drawing-overlay.active {
@@ -402,19 +405,20 @@
                             varying vec2 vUv;
                             void main() {
                                 vUv = uv;
-                                vec3 pos = position * uScale;
-                                gl_Position = projectionMatrix * modelViewMatrix * vec4(pos, 1.0);
+                                // Expand out from center line based on scale
+                                gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
                             }
                         `,
                         fragmentShader: `
                             uniform vec3 uColor;
                             uniform float uAlpha;
+                            uniform float uScale;
                             uniform float uTime;
                             varying vec2 vUv;
                             void main() {
                                 float glow = pow(1.0 - abs(vUv.y - 0.5) * 2.0, 3.0);
                                 float pulse = 0.8 + 0.2 * sin(uTime * 4.0 + vUv.x * 10.0);
-                                float taper = 1.0 - vUv.x * 0.5;
+                                float taper = (1.0 - vUv.x * 0.5) * uScale;
                                 gl_FragColor = vec4(uColor, glow * pulse * uAlpha * taper);
                             }
                         `,
@@ -520,33 +524,52 @@
                 document.getElementById('sound-icon').classList.toggle('sound-off', isMuted);
             }
 
-            // --- DRAWING LOGIC ---
+            // --- DRAWING LOGIC (Bulletproof Lifecycle) ---
             let dCanvas, dCtx, stroke = [];
+            let isDrawing = false;
+            let hasMoved = false;
+
             function initDrawingCanvas() {
                 dCanvas = document.getElementById('drawing-canvas');
                 dCtx = dCanvas.getContext('2d');
                 resizeDrawingCanvas();
                 window.addEventListener('resize', resizeDrawingCanvas);
 
-                const start = (x, y) => { stroke = [{ x: x, y: y, t: Date.now() }]; };
-                const move = (x, y) => {
-                    if (stroke.length === 0) return;
-                    stroke.push({ x: x, y: y, t: Date.now() });
+                // Use PointerEvents as recommended
+                dCanvas.addEventListener('pointerdown', (e) => {
+                    dCanvas.setPointerCapture(e.pointerId);
+                    isDrawing = true;
+                    hasMoved = false;
+                    stroke = [{ x: e.clientX, y: e.clientY, t: Date.now() }];
+                    drawStroke(); // Initial dot
+                });
+
+                dCanvas.addEventListener('pointermove', (e) => {
+                    if (!isDrawing) return;
+                    hasMoved = true;
+                    stroke.push({ x: e.clientX, y: e.clientY, t: Date.now() });
                     drawStroke();
-                };
-                const end = () => {
-                    if (stroke.length > 0) createLifeFromStroke(stroke);
+                });
+
+                dCanvas.addEventListener('pointerup', (e) => {
+                    if (!isDrawing) return;
+                    dCanvas.releasePointerCapture(e.pointerId);
+                    isDrawing = false;
+
+                    if (hasMoved) {
+                        createLifeFromStroke(stroke);
+                    }
+
+                    stroke = [];
+                    // Keep overlay until explicitly closed or birth triggered
+                    setTimeout(() => toggleDrawingMode(false), 100);
+                });
+
+                dCanvas.addEventListener('pointercancel', () => {
+                    isDrawing = false;
                     stroke = [];
                     toggleDrawingMode(false);
-                };
-
-                dCanvas.onmousedown = (e) => start(e.clientX, e.clientY);
-                dCanvas.onmousemove = (e) => move(e.clientX, e.clientY);
-                dCanvas.onmouseup = end;
-
-                dCanvas.addEventListener('touchstart', (e) => { e.preventDefault(); start(e.touches[0].clientX, e.touches[0].clientY); }, { passive: false });
-                dCanvas.addEventListener('touchmove', (e) => { e.preventDefault(); move(e.touches[0].clientX, e.touches[0].clientY); }, { passive: false });
-                dCanvas.addEventListener('touchend', (e) => { e.preventDefault(); end(); }, { passive: false });
+                });
             }
 
             function resizeDrawingCanvas() {
@@ -555,17 +578,16 @@
             }
 
             function drawStroke() {
+                if (stroke.length === 0) return;
                 dCtx.clearRect(0, 0, dCanvas.width, dCanvas.height);
                 dCtx.beginPath();
-                const grad = dCtx.createLinearGradient(stroke[0].x, stroke[0].y, stroke[stroke.length - 1].x, stroke[stroke.length - 1].y);
-                grad.addColorStop(0, '#00ffff');
-                grad.addColorStop(1, '#ffffff');
-                dCtx.strokeStyle = grad;
+                dCtx.strokeStyle = '#00ffff';
                 dCtx.lineWidth = 4;
                 dCtx.lineCap = 'round';
                 dCtx.lineJoin = 'round';
-                dCtx.shadowBlur = 10;
+                dCtx.shadowBlur = 15;
                 dCtx.shadowColor = '#00ffff';
+
                 dCtx.moveTo(stroke[0].x, stroke[0].y);
                 for (let i = 1; i < stroke.length; i++) dCtx.lineTo(stroke[i].x, stroke[i].y);
                 dCtx.stroke();
@@ -573,27 +595,38 @@
 
             function toggleDrawingMode(active) {
                 isDrawingMode = active;
-                document.getElementById('drawing-overlay').classList.toggle('active', active);
-                if (!active) dCtx.clearRect(0, 0, dCanvas.width, dCanvas.height);
+                const overlay = document.getElementById('drawing-overlay');
+                overlay.classList.toggle('active', active);
+                if (active) {
+                    resizeDrawingCanvas();
+                    dCtx.clearRect(0, 0, dCanvas.width, dCanvas.height);
+                }
             }
 
             function createLifeFromStroke(points) {
-                // Guaranteed Spawn: No filters, no early returns.
+                console.log('DRAW END', points.length);
+
+                if (!points || points.length === 0) {
+                    points = [{ x: window.innerWidth / 2, y: window.innerHeight / 2 }];
+                }
+
+                // Projection
                 const worldPoints = points.map(p => {
                     const vec = new THREE.Vector3((p.x / window.innerWidth) * 2 - 1, -(p.y / window.innerHeight) * 2 + 1, 0.5);
                     vec.unproject(camera);
                     const dir = vec.sub(camera.position).normalize();
-                    const distance = -camera.position.z / dir.z;
+                    // Safer distance calculation
+                    const denominator = Math.abs(dir.z) > 0.001 ? dir.z : (dir.z > 0 ? 0.001 : -0.001);
+                    const distance = -camera.position.z / denominator;
                     return camera.position.clone().add(dir.multiplyScalar(distance));
                 });
 
-                // Even if points are empty, the constructor handles it by randomizing position.
+                // Force Spawn
                 const creature = new Creature(worldPoints, scene);
                 creatures.push(creature);
 
-                // Birth FX & Log
-                createBirthFlash(worldPoints[0] || new THREE.Vector3(0, 0, 0), creature.color);
-                console.log(`[Birth] Total Creatures: ${creatures.length}`);
+                createBirthFlash(worldPoints[0], creature.color);
+                console.log(`[Birth] LIFE: ${creatures.length} TYPE: ${creature.type}`);
             }
 
             function createBirthFlash(pos, color) {
