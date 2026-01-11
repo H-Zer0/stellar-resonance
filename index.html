@@ -402,11 +402,19 @@
                         },
                         vertexShader: `
                             uniform float uScale;
+                            uniform float uTime;
                             varying vec2 vUv;
+                            varying float vWave;
                             void main() {
                                 vUv = uv;
-                                // Expand out from center line based on scale
-                                gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+                                vec3 pos = position;
+                                
+                                // Organic S-curve wave motion (higher frequency towards tail)
+                                float wave = sin(uTime * 6.0 - uv.x * 12.0) * 0.1 * uv.x;
+                                vWave = wave;
+                                // Apply wave displacement perpendicular to the segment line (roughly)
+                                // We simplify here as it's a ribbonmesh
+                                gl_Position = projectionMatrix * modelViewMatrix * vec4(pos, 1.0);
                             }
                         `,
                         fragmentShader: `
@@ -415,11 +423,25 @@
                             uniform float uScale;
                             uniform float uTime;
                             varying vec2 vUv;
+                            varying float vWave;
                             void main() {
-                                float glow = pow(1.0 - abs(vUv.y - 0.5) * 2.0, 3.0);
-                                float pulse = 0.8 + 0.2 * sin(uTime * 4.0 + vUv.x * 10.0);
-                                float taper = (1.0 - vUv.x * 0.5) * uScale;
-                                gl_FragColor = vec4(uColor, glow * pulse * uAlpha * taper);
+                                // 1. Glow Calculation (White core glow)
+                                float g = 1.0 - abs(vUv.y - 0.5) * 2.0;
+                                float coreGlow = pow(g, 15.0); // Intense white core
+                                float outerGlow = pow(g, 3.0);  // Soft color glow
+                                
+                                // 2. Organic Pulsing & Tapering
+                                float pulse = 0.8 + 0.2 * sin(uTime * 5.0 + vUv.x * 10.0);
+                                float taper = (1.0 - vUv.x * 0.6) * uScale;
+                                
+                                // 3. Life energy dissipation (Dissolve effect)
+                                // We use noise or simple pattern to fade out bits of the body
+                                float dissolve = step(0.1, uAlpha - pow(vUv.x, 2.0) * (1.0 - uAlpha));
+                                
+                                vec3 finalColor = mix(uColor, vec3(1.0, 1.0, 1.0), coreGlow);
+                                float alpha = outerGlow * pulse * taper * uAlpha;
+                                
+                                gl_FragColor = vec4(finalColor, alpha);
                             }
                         `,
                         transparent: true, blending: THREE.AdditiveBlending, side: THREE.DoubleSide, depthWrite: false
@@ -440,41 +462,59 @@
                         if (progress >= 1.0 && this.age > (this.birthDuration + this.waitAfterBirth)) {
                             this.state = 'LIVE';
                         }
-                        // Don't move during birth
                     } else {
-                        // LIVE State: Standard movement
+                        // LIVE State: Organic Movement
                         this.wander();
                         this.separate(others);
+
+                        // Type specific behavior
+                        if (this.type === 'jelly') {
+                            // Vertical bobbing
+                            this.acc.y += Math.sin(time * 2.0) * 0.005;
+                            this.vel.multiplyScalar(0.98); // Higher drag for jelly
+                        }
+
                         this.vel.add(this.acc);
                         this.vel.clampLength(0.01, this.maxSpeed);
                         this.pos.add(this.vel);
                         this.acc.multiplyScalar(0);
 
                         // Soft boundary
-                        if (this.pos.length() > 60) this.acc.add(this.pos.clone().multiplyScalar(-0.001));
+                        if (this.pos.length() > 70) this.acc.add(this.pos.clone().multiplyScalar(-0.001));
                     }
 
-                    // Always update trail geometry
+                    // Trail logic with wave displacement for Eels
                     this.history.unshift(this.pos.clone());
                     if (this.history.length > this.segments) this.history.pop();
 
                     const attr = this.geometry.attributes.position;
-                    const baseT = this.type === 'jelly' ? 0.7 : (this.type === 'eel' ? 0.3 : 0.2);
+                    const baseT = this.type === 'jelly' ? 0.8 : (this.type === 'eel' ? 0.4 : 0.25);
 
                     for (let i = 0; i < this.segments; i++) {
-                        const p = this.history[i];
+                        const p = this.history[i].clone();
                         const prev = i > 0 ? this.history[i - 1] : (i < this.segments - 1 ? this.history[i + 1] : p);
                         const dir = p.clone().sub(prev).normalize();
                         const norm = new THREE.Vector3(-dir.y, dir.x, 0).normalize();
 
-                        let t = baseT * (1.0 - i / this.segments);
-                        if (this.type === 'jelly') t *= (1.0 + 0.3 * Math.sin(time * 2 + i * 0.5));
+                        // Apply procedural wave to the backbone points for more fluidity
+                        if (this.type === 'eel' || this.type === 'fish') {
+                            const wave = Math.sin(time * 6.0 - i * 0.5) * (i / this.segments) * 0.5;
+                            p.add(norm.clone().multiplyScalar(wave));
+                        }
 
-                        attr.setXYZ(i * 2, p.x + norm.x * t, p.y + norm.y * t, p.z);
-                        attr.setXYZ(i * 2 + 1, p.x - norm.x * t, p.y - norm.y * t, p.z);
+                        let t = baseT * (1.0 - i / this.segments);
+                        if (this.type === 'jelly') t *= (1.2 + 0.4 * Math.sin(time * 4.0 - i * 0.2));
+
+                        attr.setXYZ(i * 2, p.x + norm.x * t, p.y + norm.y * t, p.z + norm.z * t);
+                        attr.setXYZ(i * 2 + 1, p.x - norm.x * t, p.y - norm.y * t, p.z - norm.z * t);
                     }
                     attr.needsUpdate = true;
                     this.material.uniforms.uTime.value = time;
+
+                    // Fade out near death
+                    if (this.age > 50) {
+                        this.material.uniforms.uAlpha.value = THREE.MathUtils.smoothstep(60 - this.age, 0, 10);
+                    }
                 }
 
                 wander() {
