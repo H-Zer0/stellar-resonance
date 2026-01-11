@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="ja">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DEEP SEA SYMBIOSIS</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+
+<body>
+    <div id="container">
+        <!-- Three.js will inject its canvas here -->
+        <div id="canvas-wrapper"></div>
+        <!-- UI/オーバーレイレイヤー -->
+        <div id="overlay">
+            <div id="intro-text" class="breathing">闇をなぞる、生命が灯る</div>
+        </div>
+    </div>
+    <script type="importmap">
+    {
+        "imports": {
+            "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+            "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+        }
+    }
+    </script>
+    <script src="main.js" type="module"></script>
+</body>
+
+</html>
