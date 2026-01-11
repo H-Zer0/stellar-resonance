@@ -234,6 +234,13 @@
     </div>
 
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <!-- Post-processing for Abyss Bloom -->
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/EffectComposer.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/RenderPass.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/ShaderPass.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/shaders/CopyShader.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/shaders/LuminosityHighPassShader.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/UnrealBloomPass.js"></script>
     <script>
         (function () {
             if (typeof THREE === 'undefined') return;
@@ -248,8 +255,10 @@
 
             // --- THREEJS BASE ---
             let scene, camera, renderer, clock;
+            let composer, bloomPass;
             let creatures = [];
             let particles, godRays;
+            let backgroundPlane;
 
             let fadeMesh;
 
@@ -258,15 +267,29 @@
                 camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 2000);
                 camera.position.set(0, 0, 40);
 
-                renderer = new THREE.WebGLRenderer({ antialias: false, alpha: false }); // Disable antialias for trail stability
+                renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
                 renderer.setSize(window.innerWidth, window.innerHeight);
                 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-                renderer.autoClear = false; // For trails
+                renderer.setClearColor(0x000510, 1);
+                renderer.autoClear = false;
                 document.getElementById('canvas-container').appendChild(renderer.domElement);
 
-                // Fading Quad for Trails
+                // --- POST PROCESSING (Abyss Glow) ---
+                const renderScene = new THREE.RenderPass(scene, camera);
+                renderScene.clear = true;
+
+                bloomPass = new THREE.UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 1.5, 0.4, 0.85);
+                bloomPass.threshold = 0.2;
+                bloomPass.strength = 1.2;
+                bloomPass.radius = 0.5;
+
+                composer = new THREE.EffectComposer(renderer);
+                composer.addPass(renderScene);
+                composer.addPass(bloomPass);
+
+                // --- Fading Quad for Trails (Restored with Composer compat) ---
                 const fadeGeo = new THREE.PlaneGeometry(2, 2);
-                const fadeMat = new THREE.MeshBasicMaterial({ color: 0x000510, transparent: true, opacity: 0.04 }); // Much slower fade for artistic trails
+                const fadeMat = new THREE.MeshBasicMaterial({ color: 0x000510, transparent: true, opacity: 0.1 });
                 fadeMesh = new THREE.Mesh(fadeGeo, fadeMat);
                 fadeMesh.material.depthTest = false;
                 fadeMesh.material.depthWrite = false;
@@ -277,32 +300,42 @@
             }
 
             function addEnvironment() {
+                // Background Water Noise
+                const noiseGeo = new THREE.PlaneGeometry(200, 200);
+                const noiseMat = new THREE.ShaderMaterial({
+                    uniforms: { uTime: { value: 0 } },
+                    vertexShader: `varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
+                    fragmentShader: `
+                        uniform float uTime;
+                        varying vec2 vUv;
+                        float noise(vec2 p) {
+                            return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453);
+                        }
+                        void main() {
+                            vec2 p = vUv * 2.0;
+                            float n = noise(p + uTime * 0.05);
+                            float water = sin(vUv.x * 10.0 + uTime) * 0.2 + sin(vUv.y * 8.0 - uTime * 0.8) * 0.2;
+                            gl_FragColor = vec4(0.0, 0.1, 0.2, 0.1 + water * 0.1);
+                        }
+                    `,
+                    transparent: true, blending: THREE.AdditiveBlending, depthWrite: false
+                });
+                backgroundPlane = new THREE.Mesh(noiseGeo, noiseMat);
+                backgroundPlane.position.z = -50;
+                scene.add(backgroundPlane);
+
                 // High Quality Marine Snow
-                const count = 3000;
+                const count = 2000;
                 const geo = new THREE.BufferGeometry();
                 const pos = new Float32Array(count * 3);
-                const sizes = new Float32Array(count);
-                for (let i = 0; i < count; i++) {
-                    pos[i * 3] = (Math.random() - 0.5) * 150;
-                    pos[i * 3 + 1] = (Math.random() - 0.5) * 150;
-                    pos[i * 3 + 2] = (Math.random() - 0.5) * 150;
-                    sizes[i] = Math.random() * 2.5;
-                }
+                for (let i = 0; i < count * 3; i++) pos[i] = (Math.random() - 0.5) * 150;
                 geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
-                geo.setAttribute('size', new THREE.BufferAttribute(sizes, 1));
-
-                const mat = new THREE.PointsMaterial({
-                    color: 0x00ffff,
-                    size: 0.2,
-                    transparent: true,
-                    opacity: 0.4,
-                    blending: THREE.AdditiveBlending
-                });
+                const mat = new THREE.PointsMaterial({ color: 0x00ffff, size: 0.15, transparent: true, opacity: 0.5 });
                 particles = new THREE.Points(geo, mat);
                 scene.add(particles);
 
                 // God Rays
-                const rayGeo = new THREE.PlaneGeometry(100, 100);
+                const rayGeo = new THREE.PlaneGeometry(150, 150);
                 const rayMat = new THREE.ShaderMaterial({
                     uniforms: { uTime: { value: 0 } },
                     vertexShader: `varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
@@ -310,17 +343,38 @@
                         uniform float uTime;
                         varying vec2 vUv;
                         void main() {
-                            float b = sin(vUv.x * 10.0 + uTime * 0.5) * 0.5 + 0.5;
-                            float a = (1.0 - vUv.y) * 0.1 * b;
-                            gl_FragColor = vec4(0.0, 0.8, 1.0, a);
+                            float b = sin(vUv.x * 5.0 + uTime * 0.3) * 0.5 + 0.5;
+                            float a = (1.0 - vUv.y) * 0.15 * b;
+                            gl_FragColor = vec4(0.2, 0.6, 1.0, a);
                         }
                     `,
-                    transparent: true, blending: THREE.AdditiveBlending, side: THREE.DoubleSide
+                    transparent: true, blending: THREE.AdditiveBlending, side: THREE.DoubleSide, depthWrite: false
                 });
                 godRays = new THREE.Mesh(rayGeo, rayMat);
-                godRays.position.y = 50;
+                godRays.position.set(0, 60, -20);
                 godRays.rotation.x = Math.PI / 2.5;
                 scene.add(godRays);
+            }
+
+            function animate() {
+                requestAnimationFrame(animate);
+
+                const delta = clock.getDelta();
+                const time = clock.getElapsedTime();
+
+                // Update environment
+                particles.rotation.y += 0.0005;
+                godRays.material.uniforms.uTime.value = time;
+                backgroundPlane.material.uniforms.uTime.value = time;
+
+                // Update creatures
+                creatures.forEach(c => c.update(time, delta, creatures));
+
+                // Render scene with trails and post-processing
+                renderer.setRenderTarget(null); // Ensure rendering to screen
+                renderer.clear(); // Clear the screen before drawing the fade quad
+                renderer.render(fadeMesh, camera); // Apply fade
+                composer.render(); // Render the scene with bloom
             }
 
             // --- CAMERA INTERACTION ---
@@ -719,21 +773,23 @@
 
                 updateCamera();
 
-                // Fading Trail Effect
+                // Fading Trail Effect (Manual clear control)
                 if (fadeMesh) {
                     fadeMesh.position.copy(camera.position);
                     fadeMesh.quaternion.copy(camera.quaternion);
-                    fadeMesh.translateZ(-1); // Place right in front of camera
+                    fadeMesh.translateZ(-1.1);
+                    renderer.autoClear = false;
                     renderer.render(fadeMesh, camera);
                 }
 
+                if (backgroundPlane) backgroundPlane.material.uniforms.uTime.value = time;
                 if (godRays) godRays.material.uniforms.uTime.value = time;
                 if (particles) {
                     particles.rotation.y += 0.001;
                     const pos = particles.geometry.attributes.position.array;
                     for (let i = 0; i < pos.length; i += 3) {
-                        pos[i + 1] -= 0.02; // Sinking snow
-                        if (pos[i + 1] < -50) pos[i + 1] = 50;
+                        pos[i + 1] -= 0.05 * (1.0 + Math.sin(time + i));
+                        if (pos[i + 1] < -75) pos[i + 1] = 75;
                     }
                     particles.geometry.attributes.position.needsUpdate = true;
                 }
@@ -742,14 +798,15 @@
                 for (let i = creatures.length - 1; i >= 0; i--) {
                     const c = creatures[i];
                     c.update(time, delta, creatures);
-                    if (c.isDead()) {
+                    if (c.age > 60) {
                         c.destroy();
                         creatures.splice(i, 1);
                     }
                 }
                 document.getElementById('creature-count').textContent = `LIFE: ${creatures.length}`;
 
-                renderer.render(scene, camera);
+                // Render with Composer (Bloom)
+                composer.render();
             }
 
             initScene();
