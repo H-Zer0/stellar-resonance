@@ -1,3 +1,4 @@
+<!-- DEEP SEA SYMBIOSIS: The Cycle | Final Deployment -->
 <!DOCTYPE html>
 <html lang="ja">
 
@@ -350,31 +351,30 @@
             }
 
 
-            // --- CREATURE CLASS ---
+            // --- CREATURE CLASS (Guaranteed Birth Engine) ---
             class Creature {
-                constructor(points, type, color, scene) {
+                constructor(points, scene) {
                     this.scene = scene;
-                    this.type = type; // 'dart', 'eel', 'float'
-                    this.color = new THREE.Color(color);
-                    this.energy = 1.0;
                     this.age = 0;
-                    this.maxAge = 15 + Math.random() * 20;
+                    this.state = 'BIRTH'; // BIRTH -> LIVE
+                    this.birthDuration = 1.0; // Seconds to grow
+                    this.waitAfterBirth = 0.5; // Stay still after growing
 
-                    // AI Params based on type
-                    this.maxSpeed = type === 'dart' ? 0.4 : (type === 'eel' ? 0.2 : 0.1);
-                    this.steerForce = type === 'dart' ? 0.05 : 0.02;
+                    // Archetype selection
+                    const types = ['fish', 'jelly', 'eel'];
+                    this.type = types[Math.floor(Math.random() * types.length)];
+                    this.color = new THREE.Color(COLORS[Math.floor(Math.random() * COLORS.length)]);
 
-                    // State
-                    this.pos = points[0].clone();
+                    // Physics/AI
+                    this.pos = points && points.length > 0 ? points[0].clone() : new THREE.Vector3((Math.random() - 0.5) * 20, (Math.random() - 0.5) * 20, 0);
                     this.vel = new THREE.Vector3((Math.random() - 0.5) * 0.1, (Math.random() - 0.5) * 0.1, (Math.random() - 0.5) * 0.1);
                     this.acc = new THREE.Vector3();
+                    this.maxSpeed = this.type === 'fish' ? 0.35 : (this.type === 'eel' ? 0.2 : 0.08);
 
-                    // Trail/Skeleton (Keep original points as seed or reference)
-                    this.segments = type === 'eel' ? 50 : 25;
+                    this.segments = this.type === 'eel' ? 40 : 20;
                     this.history = [];
                     for (let i = 0; i < this.segments; i++) this.history.push(this.pos.clone());
 
-                    // Mesh
                     this.initMesh();
                 }
 
@@ -388,35 +388,29 @@
                     this.material = new THREE.ShaderMaterial({
                         uniforms: {
                             uColor: { value: this.color },
-                            uEnergy: { value: this.energy },
-                            uTime: { value: 0 },
-                            uType: { value: this.type === 'dart' ? 0 : (this.type === 'eel' ? 1 : 2) }
+                            uAlpha: { value: 0.0 }, // Target for fade
+                            uScale: { value: 0.0 }, // Target for growth
+                            uTime: { value: 0 }
                         },
                         vertexShader: `
+                            uniform float uScale;
                             varying vec2 vUv;
                             void main() {
                                 vUv = uv;
-                                gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+                                vec3 pos = position * uScale;
+                                gl_Position = projectionMatrix * modelViewMatrix * vec4(pos, 1.0);
                             }
                         `,
                         fragmentShader: `
                             uniform vec3 uColor;
-                            uniform float uEnergy;
+                            uniform float uAlpha;
                             uniform float uTime;
-                            uniform float uType;
                             varying vec2 vUv;
                             void main() {
-                                float glow = pow(1.0 - abs(vUv.y - 0.5) * 2.0, 4.0);
-                                float taper = 1.0 - vUv.x;
-                                
-                                // Organic pulsing
-                                float pulse = 0.7 + 0.3 * sin(uTime * 3.0 + vUv.x * 10.0);
-                                if(uType > 1.5) pulse = 0.7 + 0.3 * sin(uTime * 1.5 + vUv.x * 5.0); // Jellyfish slow pulse
-                                
-                                vec3 finalColor = mix(uColor, vec3(1.0), glow * 0.5);
-                                float alpha = glow * uEnergy * pulse * taper;
-                                
-                                gl_FragColor = vec4(finalColor, alpha);
+                                float glow = pow(1.0 - abs(vUv.y - 0.5) * 2.0, 3.0);
+                                float pulse = 0.8 + 0.2 * sin(uTime * 4.0 + vUv.x * 10.0);
+                                float taper = 1.0 - vUv.x * 0.5;
+                                gl_FragColor = vec4(uColor, glow * pulse * uAlpha * taper);
                             }
                         `,
                         transparent: true, blending: THREE.AdditiveBlending, side: THREE.DoubleSide, depthWrite: false
@@ -428,111 +422,65 @@
 
                 update(time, delta, others) {
                     this.age += delta;
-                    this.energy = Math.max(0, 1.0 - this.age / this.maxAge);
 
-                    // --- AI BEHAVIORS ---
-                    this.wander();
-                    this.flock(others); // Schooling + Predation/Avoidance
+                    if (this.state === 'BIRTH') {
+                        const progress = Math.min(this.age / this.birthDuration, 1.0);
+                        this.material.uniforms.uAlpha.value = progress;
+                        this.material.uniforms.uScale.value = progress;
 
-                    this.vel.add(this.acc);
-                    this.vel.clampLength(0.01, this.maxSpeed);
-                    this.pos.add(this.vel);
-                    this.acc.multiplyScalar(0);
+                        if (progress >= 1.0 && this.age > (this.birthDuration + this.waitAfterBirth)) {
+                            this.state = 'LIVE';
+                        }
+                        // Don't move during birth
+                    } else {
+                        // LIVE State: Standard movement
+                        this.wander();
+                        this.separate(others);
+                        this.vel.add(this.acc);
+                        this.vel.clampLength(0.01, this.maxSpeed);
+                        this.pos.add(this.vel);
+                        this.acc.multiplyScalar(0);
 
-                    // Bound checking
-                    const limit = 60;
-                    if (Math.abs(this.pos.x) > limit) this.acc.x -= this.pos.x * 0.01;
-                    if (Math.abs(this.pos.y) > limit) this.acc.y -= this.pos.y * 0.01;
-                    if (Math.abs(this.pos.z) > limit) this.acc.z -= this.pos.z * 0.01;
+                        // Soft boundary
+                        if (this.pos.length() > 60) this.acc.add(this.pos.clone().multiplyScalar(-0.001));
+                    }
 
-                    // Update Trail
+                    // Always update trail geometry
                     this.history.unshift(this.pos.clone());
                     if (this.history.length > this.segments) this.history.pop();
 
-                    // Update Geometry
                     const attr = this.geometry.attributes.position;
-                    // Scale thickness by energy (fade out as they die)
-                    const baseThickness = (this.type === 'eel' ? 0.4 : (this.type === 'float' ? 0.8 : 0.2)) * Math.sqrt(this.energy);
+                    const baseT = this.type === 'jelly' ? 0.7 : (this.type === 'eel' ? 0.3 : 0.2);
 
                     for (let i = 0; i < this.segments; i++) {
                         const p = this.history[i];
                         const prev = i > 0 ? this.history[i - 1] : (i < this.segments - 1 ? this.history[i + 1] : p);
+                        const dir = p.clone().sub(prev).normalize();
+                        const norm = new THREE.Vector3(-dir.y, dir.x, 0).normalize();
 
-                        const direction = p.clone().sub(prev).normalize();
-                        const normal = new THREE.Vector3(-direction.y, direction.x, 0).normalize();
+                        let t = baseT * (1.0 - i / this.segments);
+                        if (this.type === 'jelly') t *= (1.0 + 0.3 * Math.sin(time * 2 + i * 0.5));
 
-                        let thickness = baseThickness * (1.0 - i / this.segments);
-                        if (this.type === 'float') thickness *= (1.0 + 0.3 * Math.sin(time * 2 + i * 0.5));
-
-                        const pLeft = p.clone().add(normal.clone().multiplyScalar(thickness));
-                        const pRight = p.clone().sub(normal.clone().multiplyScalar(thickness));
-
-                        attr.setXYZ(i * 2, pLeft.x, pLeft.y, pLeft.z);
-                        attr.setXYZ(i * 2 + 1, pRight.x, pRight.y, pRight.z);
+                        attr.setXYZ(i * 2, p.x + norm.x * t, p.y + norm.y * t, p.z);
+                        attr.setXYZ(i * 2 + 1, p.x - norm.x * t, p.y - norm.y * t, p.z);
                     }
                     attr.needsUpdate = true;
-
-                    this.material.uniforms.uEnergy.value = this.energy;
                     this.material.uniforms.uTime.value = time;
                 }
 
                 wander() {
-                    const noise = 0.015;
-                    this.acc.add(new THREE.Vector3((Math.random() - 0.5) * noise, (Math.random() - 0.5) * noise, (Math.random() - 0.5) * noise));
+                    this.acc.add(new THREE.Vector3((Math.random() - 0.5) * 0.01, (Math.random() - 0.5) * 0.01, (Math.random() - 0.5) * 0.01));
                 }
 
-                flock(others) {
-                    let sepDist = 4.0;
-                    let cohDist = 15.0;
-
-                    let sepSteer = new THREE.Vector3();
-                    let cohSteer = new THREE.Vector3();
-                    let huntSteer = new THREE.Vector3();
-
-                    let sepCount = 0;
-                    let cohCount = 0;
-
+                separate(others) {
                     others.forEach(o => {
                         if (o === this) return;
-                        let dist = this.pos.distanceTo(o.pos);
-
-                        // 1. Separation
-                        if (dist < sepDist) {
-                            sepSteer.add(this.pos.clone().sub(o.pos).normalize().divideScalar(dist));
-                            sepCount++;
-                        }
-
-                        // 2. Schooling (Cohesion with same color)
-                        if (dist < cohDist && o.color.getHex() === this.color.getHex()) {
-                            cohSteer.add(o.pos);
-                            cohCount++;
-                        }
-
-                        // 3. Predation / Avoidance (Eels hunt Darts)
-                        if (this.type === 'eel' && o.type === 'dart' && dist < 10.0) {
-                            huntSteer.add(o.pos.clone().sub(this.pos).normalize());
-                            if (dist < 1.0) o.energy *= 0.8; // Bite!
-                        }
-                        if (this.type === 'dart' && o.type === 'eel' && dist < 8.0) {
-                            sepSteer.add(this.pos.clone().sub(o.pos).normalize().multiplyScalar(2.0));
-                            sepCount++;
-                        }
+                        const d = this.pos.distanceTo(o.pos);
+                        if (d < 5.0) this.acc.add(this.pos.clone().sub(o.pos).normalize().divideScalar(d * 10));
                     });
-
-                    if (sepCount > 0) {
-                        sepSteer.divideScalar(sepCount).normalize().multiplyScalar(this.maxSpeed).sub(this.vel).clampLength(0, this.steerForce);
-                        this.acc.add(sepSteer.multiplyScalar(1.5));
-                    }
-                    if (cohCount > 0) {
-                        cohSteer.divideScalar(cohCount).sub(this.pos).normalize().multiplyScalar(this.maxSpeed).sub(this.vel).clampLength(0, this.steerForce);
-                        this.acc.add(cohSteer.multiplyScalar(0.5));
-                    }
-                    if (huntSteer.length() > 0) {
-                        this.acc.add(huntSteer.normalize().multiplyScalar(this.steerForce * 2.0));
-                    }
                 }
 
-                isDead() { return this.energy <= 0; }
+                isDead() { return this.age > 60; } // Natural death after 60s
                 destroy() {
                     this.scene.remove(this.mesh);
                     this.geometry.dispose();
@@ -625,36 +573,22 @@
             }
 
             function createLifeFromStroke(points) {
-                // Analysis
-                const start = points[0];
-                const end = points[points.length - 1];
-                const duration = end.t - start.t;
-                const pathLength = points.reduce((acc, p, i) => i === 0 ? 0 : acc + Math.sqrt((p.x - points[i - 1].x) ** 2 + (p.y - points[i - 1].y) ** 2), 0);
-                const straightDist = Math.sqrt((end.x - start.x) ** 2 + (end.y - start.y) ** 2);
-                const curvature = pathLength / (straightDist || 1);
-                const avgSpeed = pathLength / (duration || 1);
-
-                // Determine Archetype
-                let type = 'dart';
-                if (curvature > 2.0 && pathLength > 200) type = 'eel';
-                else if (avgSpeed < 0.5 && pathLength > 100) type = 'float';
-
-                // Convert Screen Points to 3D World Points for seed
+                // Guaranteed Spawn: No filters, no early returns.
                 const worldPoints = points.map(p => {
                     const vec = new THREE.Vector3((p.x / window.innerWidth) * 2 - 1, -(p.y / window.innerHeight) * 2 + 1, 0.5);
                     vec.unproject(camera);
                     const dir = vec.sub(camera.position).normalize();
-                    const distance = -camera.position.z / dir.z; // Project to Z=0 plane
+                    const distance = -camera.position.z / dir.z;
                     return camera.position.clone().add(dir.multiplyScalar(distance));
                 });
 
-                const color = COLORS[Math.floor(Math.random() * COLORS.length)];
-                const creature = new Creature(worldPoints, type, color, scene);
+                // Even if points are empty, the constructor handles it by randomizing position.
+                const creature = new Creature(worldPoints, scene);
                 creatures.push(creature);
 
-                // Trigger Birth VFX
-                createBirthFlash(worldPoints[0], color);
-                console.log(`Born: ${type} Speed:${avgSpeed.toFixed(2)} Curv:${curvature.toFixed(2)}`);
+                // Birth FX & Log
+                createBirthFlash(worldPoints[0] || new THREE.Vector3(0, 0, 0), creature.color);
+                console.log(`[Birth] Total Creatures: ${creatures.length}`);
             }
 
             function createBirthFlash(pos, color) {
