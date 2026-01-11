@@ -540,6 +540,11 @@
                 }
             }
 
+            function resetEcosystem() {
+                creatures.forEach(c => c.destroy());
+                creatures = [];
+            }
+
             // --- AUDIO LOGIC ---
             let audioCtx, oscillator, gainNode;
             function toggleSound() {
@@ -675,17 +680,6 @@
                 animateFlash();
             }
 
-            function resetEcosystem() {
-                console.log("Resetting ecosystem...");
-                creatures.forEach(c => scene.remove(c.mesh));
-                creatures = [];
-            }
-
-            function toggleSound() {
-                isMuted = !isMuted;
-                document.getElementById('sound-icon').classList.toggle('sound-off', isMuted);
-                // Background audio implementation placeholder
-            }
 
             // --- LOOP ---
             function animate() {
