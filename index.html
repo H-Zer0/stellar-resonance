@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>DEEP SEA SYMBIOSIS</title>
+    <title>DEEP SEA SYMBIOSIS | Abyss Evolution</title>
     <style>
         :root {
             --deep-sea-bg: #000510;
@@ -14,6 +14,7 @@
             margin: 0;
             padding: 0;
             box-sizing: border-box;
+            outline: none;
         }
 
         body,
@@ -23,7 +24,8 @@
             overflow: hidden;
             background-color: var(--deep-sea-bg);
             color: white;
-            font-family: sans-serif;
+            font-family: "Optima", "Inter", "Noto Sans JP", sans-serif;
+            cursor: crosshair;
         }
 
         #canvas-wrapper {
@@ -46,17 +48,28 @@
             align-items: center;
             pointer-events: none;
             z-index: 10;
+            background: radial-gradient(circle at center, transparent 0%, rgba(0, 5, 16, 0.4) 100%);
         }
 
         #intro-text {
-            font-size: clamp(1rem, 5vw, 1.5rem);
-            letter-spacing: 0.5rem;
+            font-size: clamp(1rem, 4vw, 1.2rem);
+            letter-spacing: 0.8rem;
             color: rgba(255, 255, 255, 0.9);
-            opacity: 0.7;
-            transition: opacity 2s ease;
-            text-shadow: 0 0 20px rgba(0, 255, 255, 0.5);
+            opacity: 0;
+            transition: opacity 3s ease, transform 3s ease;
+            text-shadow: 0 0 30px rgba(0, 255, 255, 0.8);
             z-index: 11;
-            animation: breathe 4s ease-in-out infinite;
+            font-weight: 200;
+            transform: translateY(10px);
+        }
+
+        #intro-text.visible {
+            opacity: 0.8;
+            transform: translateY(0);
+        }
+
+        .breathing {
+            animation: breathe 6s ease-in-out infinite;
         }
 
         @keyframes breathe {
@@ -65,11 +78,13 @@
             100% {
                 opacity: 0.2;
                 transform: scale(0.98);
+                filter: blur(1px);
             }
 
             50% {
                 opacity: 0.9;
                 transform: scale(1.02);
+                filter: blur(0px);
             }
         }
     </style>
@@ -79,265 +94,188 @@
     <div id="container">
         <div id="canvas-wrapper"></div>
         <div id="overlay">
-            <div id="intro-text">闇をなぞる、生命が灯る</div>
+            <div id="intro-text" class="breathing">闇をなぞる、生命が灯る</div>
         </div>
     </div>
 
-    <!-- Three.js UMD Build (Global THREE) -->
+    <!-- WebGL Library -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 
     <script>
-        // No ES Modules, all in one scope for maximum compatibility with file://
         (function () {
             if (typeof THREE === 'undefined') {
-                alert("Three.js could not be loaded. Please check your internet connection.");
+                document.body.innerHTML = '<div style="display:flex;justify-content:center;align-items:center;height:100vh;">Internet Connection Required for Three.js</div>';
                 return;
             }
 
-            // --- CLASSES ---
-            class Point { constructor(x, y, data) { this.x = x; this.y = y; this.data = data; } }
-            class Rectangle {
-                constructor(x, y, w, h) { this.x = x; this.y = y; this.w = w; this.h = h; }
-                contains(point) { return (point.x >= this.x - this.w && point.x <= this.x + this.w && point.y >= this.y - this.h && point.y <= this.y + this.h); }
-                intersects(range) { return !(range.x - range.w > this.x + this.w || range.x + range.w < this.x - this.w || range.y - range.h > this.y + this.h || range.y + range.h < this.y - this.h); }
-            }
-            class QuadTree {
-                constructor(boundary, n) { this.boundary = boundary; this.capacity = n; this.points = []; this.divided = false; }
-                subdivide() {
-                    let x = this.boundary.x, y = this.boundary.y, w = this.boundary.w / 2, h = this.boundary.h / 2;
-                    this.ne = new QuadTree(new Rectangle(x + w, y - h, w, h), this.capacity);
-                    this.nw = new QuadTree(new Rectangle(x - w, y - h, w, h), this.capacity);
-                    this.se = new QuadTree(new Rectangle(x + w, y + h, w, h), this.capacity);
-                    this.sw = new QuadTree(new Rectangle(x - w, y + h, w, h), this.capacity);
-                    this.divided = true;
-                }
-                insert(point) {
-                    if (!this.boundary.contains(point)) return false;
-                    if (this.points.length < this.capacity) { this.points.push(point); return true; }
-                    if (!this.divided) this.subdivide();
-                    return (this.ne.insert(point) || this.nw.insert(point) || this.se.insert(point) || this.sw.insert(point));
-                }
-                query(range, found) {
-                    if (!found) found = [];
-                    if (!this.boundary.intersects(range)) return found;
-                    for (let p of this.points) { if (range.contains(p)) found.push(p.data); }
-                    if (this.divided) { this.nw.query(range, found); this.ne.query(range, found); this.sw.query(range, found); this.se.query(range, found); }
-                    return found;
-                }
-            }
+            // --- CONFIGURATION ---
+            const CONFIG = {
+                creatureCount: 300,
+                segments: 20,
+                segmentDist: 0.15,
+                colors: [0x00FFFF, 0xFF00FF, 0x007FFF, 0x7FFF00],
+                bloom: { strength: 2.5, radius: 0.5, threshold: 0.1 }
+            };
 
+            // --- UTILS ---
+            const lerp = (a, b, t) => a + (b - a) * t;
+
+            // --- CREATURE CLASS (ORGANIC MOTION) ---
             class Creature {
-                constructor(x, y, color) {
-                    this.segments = [];
-                    this.numSegments = 8 + Math.floor(Math.random() * 8);
-                    this.segmentLength = 0.15;
+                constructor(x, y, color, scene) {
+                    this.scene = scene;
+                    this.points = [];
+                    this.segments = CONFIG.segments;
                     this.color = new THREE.Color(color);
-                    this.energy = 1.0;
-                    this.velocity = new THREE.Vector3((Math.random() - 0.5) * 0.2, (Math.random() - 0.5) * 0.2, 0);
-                    this.acceleration = new THREE.Vector3();
-                    this.maxSpeed = 0.08 + Math.random() * 0.04;
-                    this.maxForce = 0.008;
+                    this.energy = 1.0 + Math.random() * 0.5;
+                    this.decay = 0.001 + Math.random() * 0.002;
+                    this.speed = 0.05 + Math.random() * 0.1;
+                    this.noiseOffset = Math.random() * 1000;
 
-                    for (let i = 0; i < this.numSegments; i++) { this.segments.push(new THREE.Vector3(x, y, 0)); }
+                    // Trail geometry (Ribbon-like)
+                    for (let i = 0; i < this.segments; i++) {
+                        this.points.push(new THREE.Vector3(x, y, 0));
+                    }
 
-                    const geometry = new THREE.BufferGeometry().setFromPoints(this.segments);
-                    const material = new THREE.LineBasicMaterial({
+                    this.geometry = new THREE.BufferGeometry().setFromPoints(this.points);
+
+                    // Create glow material
+                    this.material = new THREE.LineBasicMaterial({
                         color: this.color,
                         transparent: true,
                         opacity: 0.8,
                         blending: THREE.AdditiveBlending,
                         linewidth: 2
                     });
-                    this.line = new THREE.Line(geometry, material);
+
+                    this.line = new THREE.Line(this.geometry, this.material);
+                    this.scene.add(this.line);
+
+                    // Add head particle for "glow" intensity
+                    const dotGeo = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0, 0, 0)]);
+                    const dotMat = new THREE.PointsMaterial({
+                        color: this.color,
+                        size: 0.4,
+                        transparent: true,
+                        blending: THREE.AdditiveBlending,
+                        opacity: 1.0
+                    });
+                    this.head = new THREE.Points(dotGeo, dotMat);
+                    this.scene.add(this.head);
                 }
 
-                update(flowField, qtree) {
-                    const range = new Rectangle(this.segments[0].x, this.segments[0].y, 2.0, 2.0);
-                    const neighbors = qtree.query(range);
-                    this.applyBehaviors(neighbors);
+                update(time, flowField) {
+                    // Motion Logic
+                    const head = this.points[0];
+                    const angle = flowField.getAt(head.x, head.y, time + this.noiseOffset);
 
-                    const flow = flowField.getAt(this.segments[0].x, this.segments[0].y);
-                    this.acceleration.add(flow.multiplyScalar(0.002));
+                    head.x += Math.cos(angle) * this.speed;
+                    head.y += Math.sin(angle) * this.speed;
+                    this.head.position.copy(head);
 
-                    this.velocity.add(this.acceleration);
-                    this.velocity.clampLength(0, this.maxSpeed);
-                    this.segments[0].add(this.velocity);
-                    this.acceleration.set(0, 0, 0);
+                    // Smooth segment follow (Inverse Kinematics style)
+                    for (let i = 1; i < this.segments; i++) {
+                        const p = this.points[i];
+                        const prev = this.points[i - 1];
+                        const dx = p.x - prev.x;
+                        const dy = p.y - prev.y;
+                        const dist = Math.sqrt(dx * dx + dy * dy);
+                        const angle = Math.atan2(dy, dx);
 
-                    for (let i = 1; i < this.segments.length; i++) {
-                        const prev = this.segments[i - 1];
-                        const curr = this.segments[i];
-                        const diff = new THREE.Vector3().subVectors(curr, prev);
-                        diff.setLength(this.segmentLength);
-                        curr.copy(prev).add(diff);
+                        p.x = prev.x + Math.cos(angle) * CONFIG.segmentDist;
+                        p.y = prev.y + Math.sin(angle) * CONFIG.segmentDist;
                     }
 
-                    this.energy -= 0.0003;
-                    this.line.material.opacity = this.energy * 0.9;
-                    this.line.geometry.setFromPoints(this.segments);
-                    this.line.geometry.attributes.position.needsUpdate = true;
+                    // Metabolism
+                    this.energy -= this.decay;
+                    this.material.opacity = Math.max(0, this.energy * 0.7);
+                    this.head.material.opacity = Math.max(0, this.energy);
+
+                    this.geometry.setFromPoints(this.points);
+                    this.geometry.attributes.position.needsUpdate = true;
                 }
 
-                applyBehaviors(neighbors) {
-                    this.acceleration.add(this.separate(neighbors).multiplyScalar(1.5));
-                    this.acceleration.add(this.align(neighbors).multiplyScalar(1.0));
-                    this.acceleration.add(this.cohesion(neighbors).multiplyScalar(1.0));
-                    this.acceleration.add(this.flee(neighbors).multiplyScalar(2.0));
-                }
-
-                separate(neighbors) {
-                    const steer = new THREE.Vector3();
-                    let count = 0;
-                    for (const other of neighbors) {
-                        const d = this.segments[0].distanceTo(other.segments[0]);
-                        if (d > 0 && d < 1.0) {
-                            const diff = new THREE.Vector3().subVectors(this.segments[0], other.segments[0]);
-                            diff.normalize().divideScalar(d);
-                            steer.add(diff);
-                            count++;
-                        }
-                    }
-                    if (count > 0) steer.divideScalar(count);
-                    if (steer.length() > 0) steer.normalize().multiplyScalar(this.maxSpeed).sub(this.velocity).clampLength(0, this.maxForce);
-                    return steer;
-                }
-
-                flee(neighbors) {
-                    const steer = new THREE.Vector3();
-                    let count = 0;
-                    for (const other of neighbors) {
-                        if (other.numSegments > this.numSegments * 1.5) {
-                            const d = this.segments[0].distanceTo(other.segments[0]);
-                            if (d < 3.0) {
-                                const diff = new THREE.Vector3().subVectors(this.segments[0], other.segments[0]);
-                                diff.normalize().divideScalar(d);
-                                steer.add(diff);
-                                count++;
-                            }
-                        }
-                    }
-                    if (count > 0) steer.divideScalar(count);
-                    if (steer.length() > 0) steer.normalize().multiplyScalar(this.maxSpeed * 1.5).sub(this.velocity).clampLength(0, this.maxForce * 2);
-                    return steer;
-                }
-
-                align(neighbors) {
-                    const sum = new THREE.Vector3();
-                    let count = 0;
-                    for (const other of neighbors) {
-                        const d = this.segments[0].distanceTo(other.segments[0]);
-                        if (d > 0 && d < 2.0) {
-                            let weight = (other.color.getHex() === this.color.getHex()) ? 2.0 : 0.5;
-                            sum.add(other.velocity.clone().multiplyScalar(weight));
-                            count += weight;
-                        }
-                    }
-                    if (count > 0) {
-                        sum.divideScalar(count).normalize().multiplyScalar(this.maxSpeed);
-                        return sum.sub(this.velocity).clampLength(0, this.maxForce);
-                    }
-                    return new THREE.Vector3();
-                }
-
-                cohesion(neighbors) {
-                    const sum = new THREE.Vector3();
-                    let count = 0;
-                    for (const other of neighbors) {
-                        const d = this.segments[0].distanceTo(other.segments[0]);
-                        if (d > 0 && d < 2.0) { sum.add(other.segments[0]); count++; }
-                    }
-                    if (count > 0) {
-                        sum.divideScalar(count);
-                        const desired = new THREE.Vector3().subVectors(sum, this.segments[0]);
-                        desired.normalize().multiplyScalar(this.maxSpeed);
-                        return desired.sub(this.velocity).clampLength(0, this.maxForce);
-                    }
-                    return new THREE.Vector3();
+                isDead() { return this.energy <= 0; }
+                destroy() {
+                    this.scene.remove(this.line);
+                    this.scene.remove(this.head);
+                    this.geometry.dispose();
+                    this.material.dispose();
                 }
             }
 
-            class FlowField {
-                constructor() { this.time = 0; }
-                getAt(x, y) { const angle = Math.sin(x * 0.5 + this.time) * Math.cos(y * 0.5 + this.time) * Math.PI * 2; return new THREE.Vector3(Math.cos(angle), Math.sin(angle), 0); }
-                update(dt) { this.time += dt * 0.5; }
-            }
-
-            // --- MAIN APP ---
-            class DeepSeaSymbiosis {
+            // --- WORLD ENGINE ---
+            class AbyssEngine {
                 constructor() {
-                    console.log("Deep Sea Symbiosis starting...");
                     this.container = document.getElementById('canvas-wrapper');
                     this.introText = document.getElementById('intro-text');
-                    this.phase = 1;
                     this.creatures = [];
-                    this.flowField = new FlowField();
+                    this.phase = 1;
                     this.mouse = new THREE.Vector2();
-                    this.isMouseDown = false;
+                    this.isDown = false;
+                    this.time = 0;
 
-                    this.initScene();
-                    this.initEnvironment();
-                    this.addEventListeners();
-                    this.animate();
+                    this.init();
+                    this.loop();
+
+                    // Show intro
+                    setTimeout(() => this.introText.classList.add('visible'), 500);
                 }
 
-                initScene() {
+                init() {
                     this.scene = new THREE.Scene();
-                    this.scene.background = new THREE.Color(0x000510);
-                    this.camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
-                    this.camera.position.z = 10;
+                    this.camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 1000);
+                    this.camera.position.z = 15;
+
                     this.renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
                     this.renderer.setSize(window.innerWidth, window.innerHeight);
                     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+                    this.renderer.setClearColor(0x000510, 1);
                     this.container.appendChild(this.renderer.domElement);
+
+                    // Marine Snow
+                    const snowCount = 4000;
+                    const snowGeo = new THREE.BufferGeometry();
+                    const snowPos = [];
+                    for (let i = 0; i < snowCount; i++) {
+                        snowPos.push(THREE.MathUtils.randFloatSpread(50), THREE.MathUtils.randFloatSpread(40), THREE.MathUtils.randFloatSpread(40));
+                    }
+                    snowGeo.setAttribute('position', new THREE.Float32BufferAttribute(snowPos, 3));
+                    this.snow = new THREE.Points(snowGeo, new THREE.PointsMaterial({ color: 0xffffff, size: 0.05, transparent: true, opacity: 0.2, blending: THREE.AdditiveBlending }));
+                    this.scene.add(snow);
+
+                    this.bindEvents();
                 }
 
-                initEnvironment() {
-                    const geometry = new THREE.BufferGeometry();
-                    const vertices = [];
-                    for (let i = 0; i < 2000; i++) { vertices.push(THREE.MathUtils.randFloatSpread(40), THREE.MathUtils.randFloatSpread(40), THREE.MathUtils.randFloatSpread(40)); }
-                    geometry.setAttribute('position', new THREE.Float32BufferAttribute(vertices, 3));
-                    this.marineSnow = new THREE.Points(geometry, new THREE.PointsMaterial({ color: 0xffffff, size: 0.05, transparent: true, opacity: 0.3, blending: THREE.AdditiveBlending }));
-                    this.scene.add(this.marineSnow);
-
-                    // Simple God Ray implementation using planes
-                    const material = new THREE.ShaderMaterial({
-                        uniforms: { time: { value: 0 }, color: { value: new THREE.Color(0x007FFF) } },
-                        vertexShader: `varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
-                        fragmentShader: `uniform float time; uniform vec3 color; varying vec2 vUv; void main() { float opacity = (1.0 - vUv.y) * 0.15 * (0.6 + 0.4 * sin(vUv.x * 8.0 + time * 0.5)); gl_FragColor = vec4(color, opacity); }`,
-                        transparent: true, blending: THREE.AdditiveBlending, side: THREE.DoubleSide
-                    });
-                    this.godRays = new THREE.Mesh(new THREE.PlaneGeometry(40, 40), material);
-                    this.godRays.position.set(0, 15, -5);
-                    this.godRays.rotation.x = -Math.PI / 3;
-                    this.scene.add(this.godRays);
-                }
-
-                addEventListeners() {
+                bindEvents() {
                     window.addEventListener('resize', () => {
                         this.camera.aspect = window.innerWidth / window.innerHeight;
                         this.camera.updateProjectionMatrix();
                         this.renderer.setSize(window.innerWidth, window.innerHeight);
                     });
 
-                    const onDown = (e) => {
-                        this.isMouseDown = true;
+                    const handleDown = (e) => {
+                        this.isDown = true;
                         this.updateMouse(e);
                         if (this.phase === 1) {
                             this.phase = 2;
-                            this.introText.style.opacity = '0';
-                            setTimeout(() => this.introText.style.display = 'none', 2000);
+                            this.introText.classList.remove('visible');
+                            setTimeout(() => this.introText.style.display = 'none', 3000);
                         }
-                        if (this.phase === 2) this.spawn();
+                        this.spawn(3);
                     };
-                    const onMove = (e) => { this.updateMouse(e); if (this.isMouseDown && this.phase === 2) this.spawn(); };
-                    const onUp = () => this.isMouseDown = false;
+                    const handleMove = (e) => {
+                        this.updateMouse(e);
+                        if (this.isDown) this.spawn(1);
+                    };
+                    const handleUp = () => this.isDown = false;
 
-                    window.addEventListener('mousedown', onDown);
-                    window.addEventListener('mousemove', onMove);
-                    window.addEventListener('mouseup', onUp);
-                    window.addEventListener('touchstart', (e) => onDown(e.touches[0]));
-                    window.addEventListener('touchmove', (e) => onMove(e.touches[0]));
-                    window.addEventListener('touchend', onUp);
+                    window.addEventListener('mousedown', handleDown);
+                    window.addEventListener('mousemove', handleMove);
+                    window.addEventListener('mouseup', handleUp);
+                    window.addEventListener('touchstart', (e) => handleDown(e.touches[0]));
+                    window.addEventListener('touchmove', (e) => handleMove(e.touches[0]));
+                    window.addEventListener('touchend', handleUp);
                 }
 
                 updateMouse(e) {
@@ -345,53 +283,54 @@
                     this.mouse.y = -(e.clientY / window.innerHeight) * 2 + 1;
                 }
 
-                spawn() {
+                spawn(count) {
                     if (this.creatures.length > 500) return;
+
                     const vector = new THREE.Vector3(this.mouse.x, this.mouse.y, 0.5);
                     vector.unproject(this.camera);
                     const dir = vector.sub(this.camera.position).normalize();
                     const pos = this.camera.position.clone().add(dir.multiplyScalar(-this.camera.position.z / dir.z));
-                    const colors = [0x00FFFF, 0xFF00FF, 0x007FFF];
-                    const creature = new Creature(pos.x, pos.y, colors[Math.floor(Math.random() * colors.length)]);
-                    this.creatures.push(creature);
-                    this.scene.add(creature.line);
+
+                    for (let i = 0; i < count; i++) {
+                        const color = CONFIG.colors[Math.floor(Math.random() * CONFIG.colors.length)];
+                        this.creatures.push(new Creature(pos.x, pos.y, color, this.scene));
+                    }
                 }
 
-                animate() {
-                    requestAnimationFrame(() => this.animate());
-                    const time = performance.now() * 0.001;
-                    this.flowField.update(0.016);
+                loop() {
+                    requestAnimationFrame(() => this.loop());
+                    this.time += 0.01;
 
-                    const qtree = new QuadTree(new Rectangle(0, 0, 20, 20), 4);
-                    for (const c of this.creatures) qtree.insert(new Point(c.segments[0].x, c.segments[0].y, c));
-
+                    // Update Creatures
                     for (let i = this.creatures.length - 1; i >= 0; i--) {
                         const c = this.creatures[i];
-                        if (this.phase === 3) {
-                            const force = new THREE.Vector3().subVectors(new THREE.Vector3(0, 0, 0), c.segments[0]).normalize().multiplyScalar(0.1);
-                            c.acceleration.add(force);
-                            if (c.segments[0].length() < 1.0) c.energy -= 0.03;
+                        c.update(this.time, this.flowField());
+                        if (c.isDead()) {
+                            c.destroy();
+                            this.creatures.splice(i, 1);
                         }
-                        c.update(this.flowField, qtree);
-                        if (c.energy <= 0) { this.scene.remove(c.line); this.creatures.splice(i, 1); }
                     }
 
-                    this.marineSnow.position.y -= 0.01;
-                    if (this.marineSnow.position.y < -15) this.marineSnow.position.y = 15;
-                    this.godRays.material.uniforms.time.value = time;
-
-                    if (this.creatures.length > 400 && this.phase === 2) this.phase = 3;
-                    if (this.phase === 3 && this.creatures.length === 0) {
-                        this.phase = 1;
-                        this.introText.style.display = 'flex';
-                        setTimeout(() => this.introText.style.opacity = '0.7', 100);
-                    }
+                    // Animate Marine Snow
+                    this.snow.position.y -= 0.005;
+                    this.snow.rotation.y += 0.0002;
+                    if (this.snow.position.y < -10) this.snow.position.y = 10;
 
                     this.renderer.render(this.scene, this.camera);
                 }
+
+                flowField() {
+                    return {
+                        getAt: (x, y, t) => {
+                            // Organic flow field using sin/cos combinations (replaces Noise)
+                            return Math.sin(x * 0.2 + t) * Math.cos(y * 0.2 + t) * Math.PI * 4;
+                        }
+                    };
+                }
             }
 
-            window.onload = () => new DeepSeaSymbiosis();
+            // Start
+            window.onload = () => new AbyssEngine();
         })();
     </script>
 </body>
