@@ -242,6 +242,12 @@ class FlowField {
 
 class DeepSeaSymbiosis {
     constructor() {
+        console.log("DEEP SEA SYMBIOSIS: initializing...");
+        if (typeof THREE === 'undefined') {
+            console.error("THREE is not loaded. Please check your internet connection or import map.");
+            return;
+        }
+
         this.container = document.getElementById('canvas-wrapper');
         this.introText = document.getElementById('intro-text');
         this.phase = 1; // 1: Intro, 2: Life, 3: Climax
@@ -251,11 +257,16 @@ class DeepSeaSymbiosis {
         this.mouse = new THREE.Vector2();
         this.isMouseDown = false;
 
-        this.initScene();
-        this.initEnvironment();
-        this.initPostProcessing();
-        this.addEventListeners();
-        this.animate();
+        try {
+            this.initScene();
+            this.initEnvironment();
+            this.initPostProcessing();
+            this.addEventListeners();
+            this.animate();
+            console.log("DEEP SEA SYMBIOSIS: ready.");
+        } catch (e) {
+            console.error("Initialization failed:", e);
+        }
     }
 
     initScene() {
@@ -266,8 +277,12 @@ class DeepSeaSymbiosis {
         this.camera.position.z = 10;
 
         this.renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
-        this.renderer.setPixelRatio(window.devicePixelRatio);
+        this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
         this.renderer.setSize(window.innerWidth, window.innerHeight);
+        this.renderer.domElement.style.position = 'absolute';
+        this.renderer.domElement.style.top = '0';
+        this.renderer.domElement.style.left = '0';
+        this.renderer.domElement.style.zIndex = '1';
         this.container.appendChild(this.renderer.domElement);
     }
 
@@ -348,22 +363,43 @@ class DeepSeaSymbiosis {
     }
 
     addEventListeners() {
+        console.log("DEEP SEA SYMBIOSIS: adding event listeners...");
         window.addEventListener('resize', () => this.onWindowResize());
 
-        window.addEventListener('mousedown', (e) => this.onMouseDown(e));
-        window.addEventListener('mousemove', (e) => this.onMouseMove(e));
-        window.addEventListener('mouseup', () => this.onMouseUp());
+        const target = window;
+        target.addEventListener('mousedown', (e) => {
+            console.log("Mousedown at", e.clientX, e.clientY);
+            this.onMouseDown(e);
+        }, { passive: false });
 
-        window.addEventListener('touchstart', (e) => this.onMouseDown(e.touches[0]));
-        window.addEventListener('touchmove', (e) => this.onMouseMove(e.touches[0]));
-        window.addEventListener('touchend', () => this.onMouseUp());
+        target.addEventListener('mousemove', (e) => {
+            this.onMouseMove(e);
+        }, { passive: false });
+
+        target.addEventListener('mouseup', () => {
+            console.log("Mouseup");
+            this.onMouseUp();
+        }, { passive: false });
+
+        target.addEventListener('touchstart', (e) => {
+            console.log("Touchstart detected");
+            if (e.touches.length > 0) this.onMouseDown(e.touches[0]);
+        }, { passive: false });
+
+        target.addEventListener('touchmove', (e) => {
+            if (e.touches.length > 0) this.onMouseMove(e.touches[0]);
+        }, { passive: false });
+
+        target.addEventListener('touchend', () => {
+            this.onMouseUp();
+        }, { passive: false });
     }
 
     onWindowResize() {
         this.camera.aspect = window.innerWidth / window.innerHeight;
         this.camera.updateProjectionMatrix();
         this.renderer.setSize(window.innerWidth, window.innerHeight);
-        this.composer.setSize(window.innerWidth, window.innerHeight);
+        if (this.composer) this.composer.setSize(window.innerWidth, window.innerHeight);
     }
 
     updateMousePosition(e) {
@@ -374,6 +410,7 @@ class DeepSeaSymbiosis {
     onMouseDown(e) {
         this.isMouseDown = true;
         this.updateMousePosition(e);
+        console.log("Input detected, phase:", this.phase);
         if (this.phase === 1) {
             this.handlePhaseTransition();
         }
@@ -395,20 +432,24 @@ class DeepSeaSymbiosis {
 
     handlePhaseTransition() {
         if (this.phase === 1) {
+            console.log("Transitioning to Phase 2...");
             this.phase = 2;
             this.introText.style.opacity = '0';
             setTimeout(() => {
                 this.introText.style.display = 'none';
             }, 2000);
-            console.log("Phase 1 -> 2: Life begins");
         }
     }
 
     spawnCreature() {
-        // Unproject mouse postion to world coordinates
+        if (this.creatures.length > 300) return; // Limit during spawning
+
         const vector = new THREE.Vector3(this.mouse.x, this.mouse.y, 0.5);
         vector.unproject(this.camera);
         const dir = vector.sub(this.camera.position).normalize();
+
+        // Find intersection with Z=0 plane
+        if (Math.abs(dir.z) < 0.001) return;
         const distance = -this.camera.position.z / dir.z;
         const pos = this.camera.position.clone().add(dir.multiplyScalar(distance));
 
@@ -418,11 +459,7 @@ class DeepSeaSymbiosis {
         this.creatures.push(creature);
         this.scene.add(creature.line);
 
-        // Performance limit
-        if (this.creatures.length > 200) {
-            const removed = this.creatures.shift();
-            this.scene.remove(removed.line);
-        }
+        console.log("Creature spawned! Total:", this.creatures.length);
     }
 
     animate() {
