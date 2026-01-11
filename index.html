@@ -121,9 +121,18 @@
                     }
                 }
 
-                update() {
+                update(time) {
                     for (let i = 0; i < this.grid.length; i++) {
-                        this.grid[i] *= 0.98; // Dampening
+                        this.grid[i] *= 0.97; // Slightly higher dampening
+                    }
+                    // Add ambient turbulence (Sea Current)
+                    const t = time * 0.3;
+                    for (let i = 0; i < 5; i++) {
+                        const rx = Math.floor(Math.random() * this.size);
+                        const ry = Math.floor(Math.random() * this.size);
+                        const idx = (ry * this.size + rx) * 2;
+                        this.grid[idx] += Math.sin(t + i) * 0.05;
+                        this.grid[idx + 1] += Math.cos(t + i) * 0.05;
                     }
                 }
 
@@ -184,10 +193,16 @@
                             varying vec2 vUv;
                             varying float vAlpha;
                             void main() {
-                                float glow = pow(1.0 - abs(vUv.y - 0.5) * 2.0, 3.0);
-                                float pulse = 0.8 + 0.2 * sin(uTime * 5.0 + vUv.x * 10.0);
-                                vec3 finalColor = mix(uColor, vec3(1.0), glow * 0.5);
-                                gl_FragColor = vec4(finalColor, uEnergy * glow * pulse * (1.0 - vUv.x));
+                                // Core glow
+                                float glow1 = pow(1.0 - abs(vUv.y - 0.5) * 2.0, 5.0);
+                                // Soft outer aura
+                                float glow2 = pow(1.0 - abs(vUv.y - 0.5) * 2.0, 1.2) * 0.4;
+                                
+                                float pulse = 0.8 + 0.2 * sin(uTime * 4.0 + vUv.x * 5.0);
+                                vec3 finalColor = mix(uColor, vec3(1.0), glow1 * 0.7);
+                                
+                                float alpha = (glow1 + glow2) * uEnergy * pulse * (1.0 - vUv.x);
+                                gl_FragColor = vec4(finalColor, alpha);
                             }
                         `,
                         transparent: true,
@@ -201,47 +216,56 @@
                 }
 
                 update(time, fluid) {
-                    // Physical Motion
+                    // Physical Motion from Fluid
                     const fVel = fluid.getVelocity(this.pos.x, this.pos.y);
-                    this.vel.x += fVel.x * 0.1;
-                    this.vel.y += fVel.y * 0.1;
+                    this.vel.x += fVel.x * 0.15;
+                    this.vel.y += fVel.y * 0.15;
 
-                    const noise = Math.sin(time * 2 + this.noiseSeed) * 0.02;
+                    // Autonomous Movement
+                    const noise = Math.sin(time * 1.5 + this.noiseSeed) * 0.04;
                     this.angle += noise;
-                    this.pos.x += Math.cos(this.angle) * this.speed + this.vel.x;
-                    this.pos.y += Math.sin(this.angle) * this.speed + this.vel.y;
 
-                    this.vel.multiplyScalar(0.95); // Friction
+                    const moveX = Math.cos(this.angle) * this.speed;
+                    const moveY = Math.sin(this.angle) * this.speed;
+                    this.pos.x += moveX + this.vel.x;
+                    this.pos.y += moveY + this.vel.y;
 
-                    // Update points (Leader-Follower)
+                    this.vel.multiplyScalar(0.96); // Viscosity
+
+                    // Add own velocity back to fluid field
+                    fluid.addVelocity(this.pos.x, this.pos.y, moveX * 2.5, moveY * 2.5, 2);
+
+                    // Update points (Leader-Follower with variable tension)
                     const head = this.points[0];
-                    const prevPos = { x: head.x, y: head.y };
                     head.set(this.pos.x, this.pos.y, 0);
 
-                    fluid.addVelocity(head.x, head.y, head.x - prevPos.x, head.y - prevPos.y, 1);
+                    const speedMag = Math.sqrt(moveX * moveX + moveY * moveY + this.vel.x * this.vel.x + this.vel.y * this.vel.y);
+                    const dynamicThickness = 0.18 + speedMag * 2.5;
 
                     for (let i = 1; i < this.segments; i++) {
                         const p = this.points[i];
                         const prev = this.points[i - 1];
-                        p.x = lerp(p.x, prev.x, 0.25);
-                        p.y = lerp(p.y, prev.y, 0.25);
+                        const tension = 0.2 + (i / this.segments) * 0.15;
+                        p.x = lerp(p.x, prev.x, tension);
+                        p.y = lerp(p.y, prev.y, tension);
                     }
 
-                    // Update Geometry (Ribbon Mesh generation)
+                    // Update Geometry (Ribbon Mesh generation with organic tapering)
                     const attr = this.geometry.attributes.position;
                     for (let i = 0; i < this.segments; i++) {
                         const p = this.points[i];
-                        const prev = i > 0 ? this.points[i - 1] : this.points[i + 1];
+                        const prev = i > 0 ? this.points[i - 1] : (i < this.segments - 1 ? this.points[i + 1] : p);
                         const dx = p.x - prev.x;
                         const dy = p.y - prev.y;
-                        const len = Math.sqrt(dx * dx + dy * dy) || 1;
+                        const len = Math.sqrt(dx * dx + dy * dy) || 0.001;
                         const nx = -dy / len;
                         const ny = dx / len;
 
-                        const thickness = 0.15 * (1.0 - i / this.segments);
+                        const taper = Math.pow(1.0 - i / this.segments, 0.85);
+                        const currentThickness = dynamicThickness * taper;
 
-                        attr.setXYZ(i * 2, p.x + nx * thickness, p.y + ny * thickness, 1.0);
-                        attr.setXYZ(i * 2 + 1, p.x - nx * thickness, p.y - ny * thickness, 1.0);
+                        attr.setXYZ(i * 2, p.x + nx * currentThickness, p.y + ny * currentThickness, 1.0);
+                        attr.setXYZ(i * 2 + 1, p.x - nx * currentThickness, p.y - ny * currentThickness, 1.0);
                     }
                     attr.needsUpdate = true;
 
@@ -331,7 +355,28 @@
                     this.rays.rotation.x = -Math.PI / 3;
                     this.scene.add(this.rays);
 
-                    this.bindEvents();
+                    // Deep Sea Haze (Background Noise)
+                    const hazeGeo = new THREE.PlaneGeometry(100, 100);
+                    const hazeMat = new THREE.ShaderMaterial({
+                        uniforms: { uTime: { value: 0 } },
+                        vertexShader: `varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
+                        fragmentShader: `
+                            uniform float uTime;
+                            varying vec2 vUv;
+                            float noise(vec2 p) { return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453); }
+                            void main() {
+                                float n = noise(vUv * 5.0 + uTime * 0.1);
+                                float smoke = sin(vUv.x * 3.0 + uTime * 0.2) * cos(vUv.y * 3.0 + uTime * 0.3) * 0.5 + 0.5;
+                                gl_FragColor = vec4(0.0, 0.05, 0.1, smoke * 0.08);
+                            }
+                        `,
+                        transparent: true,
+                        depthWrite: false,
+                        blending: THREE.AdditiveBlending
+                    });
+                    this.haze = new THREE.Mesh(hazeGeo, hazeMat);
+                    this.haze.position.z = -15; // Far back
+                    this.scene.add(this.haze);
                 }
 
                 bindEvents() {
@@ -389,7 +434,7 @@
                 animate() {
                     requestAnimationFrame(() => this.animate());
                     this.time += 0.016;
-                    this.fluid.update();
+                    this.fluid.update(this.time);
 
                     // Render Feedback
                     this.fadePlane.position.copy(this.camera.position).add(this.camera.getWorldDirection(new THREE.Vector3()).multiplyScalar(1));
@@ -418,6 +463,7 @@
                     this.snow.geometry.attributes.position.needsUpdate = true;
 
                     if (this.rays) this.rays.material.uniforms.uTime.value = this.time;
+                    if (this.haze) this.haze.material.uniforms.uTime.value = this.time;
 
                     this.renderer.render(this.scene, this.camera);
                 }
