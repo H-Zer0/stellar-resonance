@@ -16,6 +16,7 @@
             padding: 0;
             box-sizing: border-box;
             -webkit-user-select: none;
+            user-select: none;
         }
 
         body,
@@ -241,23 +242,28 @@
             let creatures = [];
             let particles, godRays;
 
+            let fadeMesh;
+
             function initScene() {
                 scene = new THREE.Scene();
                 camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 2000);
                 camera.position.set(0, 0, 40);
 
-                renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+                renderer = new THREE.WebGLRenderer({ antialias: false, alpha: false }); // Disable antialias for trail stability
                 renderer.setSize(window.innerWidth, window.innerHeight);
                 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-                renderer.setClearColor(0x000510, 1);
+                renderer.autoClear = false; // For trails
                 document.getElementById('canvas-container').appendChild(renderer.domElement);
 
+                // Fading Quad for Trails
+                const fadeGeo = new THREE.PlaneGeometry(2, 2);
+                const fadeMat = new THREE.MeshBasicMaterial({ color: 0x000510, transparent: true, opacity: 0.1 });
+                fadeMesh = new THREE.Mesh(fadeGeo, fadeMat);
+                fadeMesh.material.depthTest = false;
+                fadeMesh.material.depthWrite = false;
+
                 clock = new THREE.Clock();
-
-                // Environment
                 addEnvironment();
-
-                // Animation Loop
                 animate();
             }
 
@@ -534,6 +540,28 @@
                 }
             }
 
+            // --- AUDIO LOGIC ---
+            let audioCtx, oscillator, gainNode;
+            function toggleSound() {
+                if (!audioCtx) {
+                    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+                    oscillator = audioCtx.createOscillator();
+                    gainNode = audioCtx.createGain();
+                    oscillator.type = 'sine';
+                    oscillator.frequency.value = 40; // Deep hum
+                    gainNode.gain.value = 0.05;
+                    oscillator.connect(gainNode);
+                    gainNode.connect(audioCtx.destination);
+                    oscillator.start();
+                }
+
+                isMuted = !isMuted;
+                if (isMuted) gainNode.gain.setTargetAtTime(0, audioCtx.currentTime, 0.1);
+                else gainNode.gain.setTargetAtTime(0.05, audioCtx.currentTime, 0.1);
+
+                document.getElementById('sound-icon').classList.toggle('sound-off', isMuted);
+            }
+
             // --- DRAWING LOGIC ---
             let dCanvas, dCtx, stroke = [];
             function initDrawingCanvas() {
@@ -542,19 +570,25 @@
                 resizeDrawingCanvas();
                 window.addEventListener('resize', resizeDrawingCanvas);
 
-                dCanvas.onmousedown = (e) => {
-                    stroke = [{ x: e.clientX, y: e.clientY, t: Date.now() }];
-                };
-                dCanvas.onmousemove = (e) => {
+                const start = (x, y) => { stroke = [{ x: x, y: y, t: Date.now() }]; };
+                const move = (x, y) => {
                     if (stroke.length === 0) return;
-                    stroke.push({ x: e.clientX, y: e.clientY, t: Date.now() });
+                    stroke.push({ x: x, y: y, t: Date.now() });
                     drawStroke();
                 };
-                dCanvas.onmouseup = () => {
+                const end = () => {
                     if (stroke.length > 5) createLifeFromStroke(stroke);
                     stroke = [];
                     toggleDrawingMode(false);
                 };
+
+                dCanvas.onmousedown = (e) => start(e.clientX, e.clientY);
+                dCanvas.onmousemove = (e) => move(e.clientX, e.clientY);
+                dCanvas.onmouseup = end;
+
+                dCanvas.addEventListener('touchstart', (e) => { e.preventDefault(); start(e.touches[0].clientX, e.touches[0].clientY); }, { passive: false });
+                dCanvas.addEventListener('touchmove', (e) => { e.preventDefault(); move(e.touches[0].clientX, e.touches[0].clientY); }, { passive: false });
+                dCanvas.addEventListener('touchend', (e) => { e.preventDefault(); end(); }, { passive: false });
             }
 
             function resizeDrawingCanvas() {
@@ -660,6 +694,14 @@
                 const time = clock.getElapsedTime();
 
                 updateCamera();
+
+                // Fading Trail Effect
+                if (fadeMesh) {
+                    fadeMesh.position.copy(camera.position);
+                    fadeMesh.quaternion.copy(camera.quaternion);
+                    fadeMesh.translateZ(-1); // Place right in front of camera
+                    renderer.render(fadeMesh, camera);
+                }
 
                 if (godRays) godRays.material.uniforms.uTime.value = time;
                 if (particles) {
