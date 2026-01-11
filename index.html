@@ -276,11 +276,11 @@
 
                 // --- POST PROCESSING ---
                 const renderScene = new THREE.RenderPass(scene, camera);
-                renderScene.clear = false; // We handle clear manually for trails
+                renderScene.clear = false;
 
-                bloomPass = new THREE.UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 1.0, 0.4, 0.85);
+                bloomPass = new THREE.UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 1.2, 0.4, 0.85);
                 bloomPass.threshold = 0.2;
-                bloomPass.strength = 1.0;
+                bloomPass.strength = 1.2;
                 bloomPass.radius = 0.5;
 
                 composer = new THREE.EffectComposer(renderer);
@@ -288,7 +288,7 @@
                 composer.addPass(bloomPass);
 
                 const fadeGeo = new THREE.PlaneGeometry(2, 2);
-                const fadeMat = new THREE.MeshBasicMaterial({ color: 0x000510, transparent: true, opacity: 0.1 });
+                const fadeMat = new THREE.MeshBasicMaterial({ color: 0x000510, transparent: true, opacity: 0.12 });
                 fadeMesh = new THREE.Mesh(fadeGeo, fadeMat);
                 fadeMesh.material.depthTest = false;
                 fadeMesh.material.depthWrite = false;
@@ -305,6 +305,65 @@
                 animate();
             }
 
+            function addEnvironment() {
+                // Background Water Noise
+                const noiseGeo = new THREE.PlaneGeometry(300, 300);
+                const noiseMat = new THREE.ShaderMaterial({
+                    uniforms: { uTime: { value: 0 } },
+                    vertexShader: `varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
+                    fragmentShader: `
+                        uniform float uTime;
+                        varying vec2 vUv;
+                        float noise(vec2 p) {
+                            return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453);
+                        }
+                        void main() {
+                            vec2 p = vUv * 4.0;
+                            float n = noise(p + uTime * 0.02);
+                            float water = sin(vUv.x * 12.0 + uTime * 0.5) * 0.2 + sin(vUv.y * 10.0 - uTime * 0.3) * 0.2;
+                            gl_FragColor = vec4(0.02, 0.12, 0.25, 0.15 + water * 0.12);
+                        }
+                    `,
+                    transparent: true, blending: THREE.AdditiveBlending, depthWrite: false
+                });
+                backgroundPlane = new THREE.Mesh(noiseGeo, noiseMat);
+                backgroundPlane.position.z = -60;
+                scene.add(backgroundPlane);
+
+                // High Quality Marine Snow
+                const count = 3000;
+                const geo = new THREE.BufferGeometry();
+                const pos = new Float32Array(count * 3);
+                for (let i = 0; i < count * 3; i++) {
+                    pos[i] = (Math.random() - 0.5) * 160;
+                }
+                geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+                const mat = new THREE.PointsMaterial({ color: 0x00ffff, size: 0.12, transparent: true, opacity: 0.4, blending: THREE.AdditiveBlending });
+                particles = new THREE.Points(geo, mat);
+                scene.add(particles);
+
+                // God Rays
+                const rayGeo = new THREE.PlaneGeometry(200, 200);
+                const rayMat = new THREE.ShaderMaterial({
+                    uniforms: { uTime: { value: 0 } },
+                    vertexShader: `varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
+                    fragmentShader: `
+                        uniform float uTime;
+                        varying vec2 vUv;
+                        void main() {
+                            float b = sin(vUv.x * 6.0 + uTime * 0.2) * 0.5 + 0.5;
+                            float a = pow(1.0 - vUv.y, 2.0) * 0.1 * b;
+                            gl_FragColor = vec4(0.3, 0.7, 1.0, a);
+                        }
+                    `,
+                    transparent: true, blending: THREE.AdditiveBlending, side: THREE.DoubleSide, depthWrite: false
+                });
+                godRays = new THREE.Mesh(rayGeo, rayMat);
+                godRays.position.set(0, 70, -30);
+                godRays.rotation.x = Math.PI / 2.5;
+                scene.add(godRays);
+            }
+
             function animate() {
                 requestAnimationFrame(animate);
                 const delta = clock.getDelta();
@@ -312,7 +371,7 @@
 
                 updateCamera();
 
-                // 1. Trails (Fade previous frame)
+                // 1. Trails
                 if (fadeMesh) {
                     fadeMesh.position.copy(camera.position);
                     fadeMesh.quaternion.copy(camera.quaternion);
@@ -325,10 +384,10 @@
                 if (backgroundPlane) backgroundPlane.material.uniforms.uTime.value = time;
                 if (godRays) godRays.material.uniforms.uTime.value = time;
                 if (particles) {
-                    particles.rotation.y += 0.0005;
+                    particles.rotation.y += 0.0003;
                     const pos = particles.geometry.attributes.position.array;
                     for (let i = 0; i < pos.length; i += 3) {
-                        pos[i + 1] -= 0.05; if (pos[i + 1] < -75) pos[i + 1] = 75;
+                        pos[i + 1] -= 0.03; if (pos[i + 1] < -80) pos[i + 1] = 80;
                     }
                     particles.geometry.attributes.position.needsUpdate = true;
                 }
@@ -340,31 +399,36 @@
                 }
                 document.getElementById('creature-count').textContent = `LIFE: ${creatures.length}`;
 
-                // 3. Render Final with Bloom
+                // 3. Render
                 composer.render();
             }
 
-            // --- CAMERA INTERACTION ---
+            // --- CAMERA ---
             let targetRotX = 0, targetRotY = 0;
             let currentRotX = 0, currentRotY = 0;
             let targetZoom = 40, currentZoom = 40;
             let isDragging = false, lastMouseX = 0, lastMouseY = 0;
 
+            function updateCamera() {
+                currentRotX = THREE.MathUtils.lerp(currentRotX, targetRotX, 0.05);
+                currentRotY = THREE.MathUtils.lerp(currentRotY, targetRotY, 0.05);
+                currentZoom = THREE.MathUtils.lerp(currentZoom, targetZoom, 0.05);
+                camera.position.x = currentZoom * Math.sin(currentRotY) * Math.cos(currentRotX);
+                camera.position.y = currentZoom * Math.sin(currentRotX);
+                camera.position.z = currentZoom * Math.cos(currentRotY) * Math.cos(currentRotX);
+                camera.lookAt(0, 0, 0);
+            }
+
             function initInteraction() {
                 window.addEventListener('mousedown', (e) => {
                     if (isDrawingMode) return;
-                    isDragging = true;
-                    lastMouseX = e.clientX;
-                    lastMouseY = e.clientY;
+                    isDragging = true; lastMouseX = e.clientX; lastMouseY = e.clientY;
                 });
                 window.addEventListener('mousemove', (e) => {
                     if (!isDragging || isDrawingMode) return;
-                    const dx = e.clientX - lastMouseX;
-                    const dy = e.clientY - lastMouseY;
-                    targetRotY += dx * 0.005;
-                    targetRotX += dy * 0.005;
-                    lastMouseX = e.clientX;
-                    lastMouseY = e.clientY;
+                    targetRotY += (e.clientX - lastMouseX) * 0.005;
+                    targetRotX += (e.clientY - lastMouseY) * 0.005;
+                    lastMouseX = e.clientX; lastMouseY = e.clientY;
                 });
                 window.addEventListener('mouseup', () => isDragging = false);
                 window.addEventListener('wheel', (e) => {
@@ -372,25 +436,10 @@
                     targetZoom = THREE.MathUtils.clamp(targetZoom + e.deltaY * 0.05, 10, 100);
                 });
 
-                // UI Events
                 document.getElementById('draw-btn').onclick = () => toggleDrawingMode(true);
                 document.getElementById('reset-btn').onclick = resetEcosystem;
                 document.getElementById('sound-btn').onclick = toggleSound;
-
                 initDrawingCanvas();
-            }
-
-            function updateCamera() {
-                currentRotX = THREE.MathUtils.lerp(currentRotX, targetRotX, 0.05);
-                currentRotY = THREE.MathUtils.lerp(currentRotY, targetRotY, 0.05);
-                currentZoom = THREE.MathUtils.lerp(currentZoom, targetZoom, 0.05);
-
-                const phi = currentRotX;
-                const theta = currentRotY;
-                camera.position.x = currentZoom * Math.sin(theta) * Math.cos(phi);
-                camera.position.y = currentZoom * Math.sin(phi);
-                camera.position.z = currentZoom * Math.cos(theta) * Math.cos(phi);
-                camera.lookAt(0, 0, 0);
             }
 
 
@@ -745,51 +794,6 @@
                     }
                 };
                 animateFlash();
-            }
-
-
-            // --- LOOP ---
-            function animate() {
-                requestAnimationFrame(animate);
-                const delta = clock.getDelta();
-                const time = clock.getElapsedTime();
-
-                updateCamera();
-
-                // Fading Trail Effect (Manual clear control)
-                if (fadeMesh) {
-                    fadeMesh.position.copy(camera.position);
-                    fadeMesh.quaternion.copy(camera.quaternion);
-                    fadeMesh.translateZ(-1.1);
-                    renderer.autoClear = false;
-                    renderer.render(fadeMesh, camera);
-                }
-
-                if (backgroundPlane) backgroundPlane.material.uniforms.uTime.value = time;
-                if (godRays) godRays.material.uniforms.uTime.value = time;
-                if (particles) {
-                    particles.rotation.y += 0.001;
-                    const pos = particles.geometry.attributes.position.array;
-                    for (let i = 0; i < pos.length; i += 3) {
-                        pos[i + 1] -= 0.05 * (1.0 + Math.sin(time + i));
-                        if (pos[i + 1] < -75) pos[i + 1] = 75;
-                    }
-                    particles.geometry.attributes.position.needsUpdate = true;
-                }
-
-                // Creatures Update
-                for (let i = creatures.length - 1; i >= 0; i--) {
-                    const c = creatures[i];
-                    c.update(time, delta, creatures);
-                    if (c.age > 60) {
-                        c.destroy();
-                        creatures.splice(i, 1);
-                    }
-                }
-                document.getElementById('creature-count').textContent = `LIFE: ${creatures.length}`;
-
-                // Render with Composer (Bloom)
-                composer.render();
             }
 
             initScene();
