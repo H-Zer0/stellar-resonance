@@ -1,804 +1,601 @@
-<!-- DEEP SEA SYMBIOSIS: The Cycle | Final Deployment -->
 <!DOCTYPE html>
 <html lang="ja">
 
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>DEEP SEA SYMBIOSIS | The Cycle</title>
+    <title>DEEP SEA SYMBIOSIS | Resonance</title>
     <style>
         :root {
             --accent: #00ffff;
-            --bg: #000510;
+            --bg: #000814;
+            --glass: rgba(0, 20, 40, 0.4);
         }
 
         * {
             margin: 0;
             padding: 0;
             box-sizing: border-box;
-            -webkit-user-select: none;
-            user-select: none;
+            overflow: hidden;
         }
 
-        body,
-        html {
-            width: 100%;
-            height: 100%;
-            overflow: hidden;
+        body {
             background: var(--bg);
-            font-family: "Optima", "BIZ UDPMincho", serif;
+            font-family: 'Inter', system-ui, sans-serif;
             color: white;
         }
 
-        #canvas-container {
+        #ui-overlay {
             position: absolute;
             inset: 0;
-            z-index: 1;
-        }
-
-        /* UI Layers */
-        #ui-layer {
-            position: absolute;
-            inset: 0;
+            z-index: 100;
+            pointer-events: none;
             display: flex;
             flex-direction: column;
             justify-content: space-between;
-            pointer-events: none;
-            z-index: 10;
             padding: 2rem;
         }
 
-        .pane {
+        .glass-panel {
             pointer-events: auto;
+            background: var(--glass);
+            backdrop-filter: blur(12px);
+            border: 1px solid rgba(0, 255, 255, 0.2);
+            border-radius: 12px;
+            padding: 1rem;
         }
 
-        #top-ui {
+        #top-bar {
             display: flex;
             justify-content: space-between;
-            align-items: flex-start;
-        }
-
-        #title-area {
-            text-align: left;
+            align-items: center;
         }
 
         h1 {
-            font-size: 1.2rem;
-            letter-spacing: 0.5rem;
-            color: var(--accent);
-            opacity: 0.8;
-            text-shadow: 0 0 10px var(--accent);
-        }
-
-        p.subtitle {
-            font-size: 0.8rem;
-            letter-spacing: 0.2rem;
-            opacity: 0.6;
-            margin-top: 0.5rem;
-        }
-
-        #controls {
-            display: flex;
-            gap: 1rem;
-        }
-
-        .btn-circle {
-            width: 44px;
-            height: 44px;
-            border-radius: 50%;
-            border: 1px solid rgba(0, 255, 255, 0.3);
-            background: rgba(0, 5, 16, 0.6);
-            backdrop-filter: blur(10px);
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            cursor: pointer;
-            transition: 0.3s;
-        }
-
-        .btn-circle:hover {
-            border-color: var(--accent);
-            box-shadow: 0 0 15px var(--accent);
-        }
-
-        .btn-circle svg {
-            width: 20px;
-            height: 20px;
-            fill: var(--accent);
-        }
-
-        #bottom-ui {
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            gap: 1rem;
-        }
-
-        #hint-text {
-            font-size: 0.9rem;
-            letter-spacing: 0.3rem;
-            opacity: 0.5;
-            animation: breathe 4s infinite;
-        }
-
-        #draw-btn {
-            padding: 1rem 3rem;
-            border-radius: 2rem;
-            border: 1px solid var(--accent);
-            background: rgba(0, 255, 255, 0.1);
-            color: var(--accent);
             font-size: 1rem;
-            letter-spacing: 0.5rem;
-            cursor: pointer;
-            transition: 0.3s;
+            letter-spacing: 0.3em;
+            color: var(--accent);
             text-transform: uppercase;
         }
 
-        #draw-btn:hover {
+        #bottom-bar {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+            justify-content: center;
+        }
+
+        .btn {
+            background: rgba(0, 255, 255, 0.1);
+            border: 1px solid var(--accent);
+            color: var(--accent);
+            padding: 0.8rem 2rem;
+            border-radius: 30px;
+            cursor: pointer;
+            transition: 0.3s;
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+            font-weight: bold;
+        }
+
+        .btn:hover {
             background: var(--accent);
             color: var(--bg);
-            box-shadow: 0 0 30px var(--accent);
+            box-shadow: 0 0 20px var(--accent);
         }
 
-        /* Drawing Overlay */
-        #drawing-overlay {
+        /* Sketch Canvas */
+        #sketch-overlay {
             position: absolute;
             inset: 0;
-            background: rgba(0, 5, 16, 0.5);
-            /* Lighter for visibility */
+            z-index: 200;
+            background: rgba(0, 8, 20, 0.7);
             display: none;
-            z-index: 100 !important;
-            /* Ensure it's on top of UI */
             cursor: crosshair;
-            pointer-events: auto;
         }
 
-        #drawing-overlay.active {
+        #sketch-overlay.active {
             display: block;
         }
 
-        #drawing-canvas {
+        #sketch-canvas {
             width: 100%;
             height: 100%;
         }
 
-        #draw-instructions {
+        #sketch-hint {
             position: absolute;
             top: 10%;
             width: 100%;
             text-align: center;
-            font-size: 1rem;
-            letter-spacing: 0.4rem;
             color: var(--accent);
-        }
-
-        @keyframes breathe {
-
-            0%,
-            100% {
-                opacity: 0.3;
-                transform: scale(0.98);
-            }
-
-            50% {
-                opacity: 0.8;
-                transform: scale(1);
-            }
-        }
-
-        /* Sound Icon Placeholder */
-        .sound-off line {
-            display: none;
+            font-size: 1.2rem;
+            pointer-events: none;
+            letter-spacing: 0.2rem;
         }
     </style>
 </head>
 
 <body>
-    <div id="canvas-container"></div>
 
-    <div id="ui-layer">
-        <div id="top-ui" class="pane">
-            <div id="title-area">
-                <h1>深海のサイクル</h1>
-                <p class="subtitle">SYMBIOSIS OF THE ABYSS</p>
-            </div>
-            <div id="controls">
-                <div class="control-group">
-                    <div class="btn-circle" id="reset-btn" title="Reset ecosystem">
-                        <svg viewBox="0 0 24 24">
-                            <path
-                                d="M17.65 6.35C16.2 4.9 14.21 4 12 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08c-.82 2.33-3.04 4-5.65 4-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z" />
-                        </svg>
-                    </div>
-                    <div id="creature-count"
-                        style="color: rgba(255,255,255,0.7); font-family: monospace; font-size: 12px; pointer-events: none;">
-                        LIFE: 0</div>
-                </div>
-                <div class="btn-circle" id="sound-btn" title="Toggle Sound">
-                    <svg viewBox="0 0 24 24" id="sound-icon">
-                        <path
-                            d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z" />
-                    </svg>
-                </div>
-            </div>
+    <div id="ui-overlay">
+        <div id="top-bar" class="glass-panel">
+            <h1>Deep Sea Symbiosis</h1>
+            <div id="stats" style="font-family: monospace; opacity: 0.7;">LIFE: 0</div>
         </div>
-        <div id="bottom-ui" class="pane">
-            <div id="hint-text">海は静かに、あなたの筆跡を待っている</div>
-            <button id="draw-btn">生命を創る</button>
+        <div id="bottom-bar">
+            <button class="btn" id="spawn-btn">生命を創印する</button>
+            <button class="btn" id="sound-btn">SOUND: OFF</button>
         </div>
     </div>
 
-    <div id="drawing-overlay">
-        <div id="draw-instructions">一本の線を、一息に描いてください</div>
-        <canvas id="drawing-canvas"></canvas>
+    <div id="sketch-overlay">
+        <div id="sketch-hint">深海の生命を描いてください</div>
+        <canvas id="sketch-canvas"></canvas>
     </div>
 
+    <!-- Libraries -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
-    <!-- Post-processing for Abyss Bloom -->
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/EffectComposer.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/RenderPass.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/UnrealBloomPass.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/shaders/LuminosityHighPassShader.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/ShaderPass.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/shaders/CopyShader.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/shaders/LuminosityHighPassShader.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/UnrealBloomPass.js"></script>
+
     <script>
-        (function () {
-            if (typeof THREE === 'undefined') return;
+        /**
+         * DEEP SEA SYMBIOSIS | Resonance Engine
+         * A complex biological simulation driven by user sketches.
+         */
 
-            // --- CONFIG ---
-            const COLORS = [0x00ffff, 0xff00ff, 0x007fff, 0x7fff00, 0xffff00];
-            const MAX_CREATURES = 100;
+        class Simulation {
+            constructor() {
+                this.initThree();
+                this.initPhysics();
+                this.initSketch();
+                this.animate();
+                this.creatures = [];
+                this.isMuted = true;
+            }
 
-            // --- STATE ---
-            let isDrawingMode = false;
-            let isMuted = true;
+            // --- STEP 4: レンダリング基盤 ---
+            initThree() {
+                this.scene = new THREE.Scene();
+                this.camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 2000);
+                this.camera.position.set(0, 0, 100);
 
-            // --- THREEJS BASE ---
-            let scene, camera, renderer, clock;
-            let composer, bloomPass;
-            let creatures = [];
-            let particles, godRays;
-            let backgroundPlane;
+                this.renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
+                this.renderer.setSize(window.innerWidth, window.innerHeight);
+                this.renderer.setPixelRatio(window.devicePixelRatio);
+                this.renderer.setClearColor(0x000814);
+                document.body.appendChild(this.renderer.domElement);
 
-            let fadeMesh;
+                this.controls = new THREE.OrbitControls(this.camera, this.renderer.domElement);
+                this.controls.enableDamping = true;
+                this.controls.autoRotate = true;
+                this.controls.autoRotateSpeed = 0.5;
 
-            function initScene() {
-                scene = new THREE.Scene();
-                camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 2000);
-                camera.position.set(0, 0, 40);
-
-                renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
-                renderer.setSize(window.innerWidth, window.innerHeight);
-                renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-                renderer.setClearColor(0x000510, 1);
-                renderer.autoClear = false;
-                document.getElementById('canvas-container').appendChild(renderer.domElement);
-
-                // --- POST PROCESSING ---
-                const renderScene = new THREE.RenderPass(scene, camera);
-                renderScene.clear = false;
-
-                bloomPass = new THREE.UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 1.2, 0.4, 0.85);
+                // Post-processing
+                const renderScene = new THREE.RenderPass(this.scene, this.camera);
+                const bloomPass = new THREE.UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 1.5, 0.4, 0.85);
                 bloomPass.threshold = 0.2;
                 bloomPass.strength = 1.2;
                 bloomPass.radius = 0.5;
 
-                composer = new THREE.EffectComposer(renderer);
-                composer.addPass(renderScene);
-                composer.addPass(bloomPass);
+                this.composer = new THREE.EffectComposer(this.renderer);
+                this.composer.addPass(renderScene);
+                this.composer.addPass(bloomPass);
 
-                const fadeGeo = new THREE.PlaneGeometry(2, 2);
-                const fadeMat = new THREE.MeshBasicMaterial({ color: 0x000510, transparent: true, opacity: 0.12 });
-                fadeMesh = new THREE.Mesh(fadeGeo, fadeMat);
-                fadeMesh.material.depthTest = false;
-                fadeMesh.material.depthWrite = false;
-
-                clock = new THREE.Clock();
-                addEnvironment();
+                // Environment: Marine Snow & Infinite Abyss
+                this.addEnvironment();
+                this.addAbyssShader();
 
                 window.addEventListener('resize', () => {
-                    const w = window.innerWidth, h = window.innerHeight;
-                    camera.aspect = w / h; camera.updateProjectionMatrix();
-                    renderer.setSize(w, h); composer.setSize(w, h);
+                    this.camera.aspect = window.innerWidth / window.innerHeight;
+                    this.camera.updateProjectionMatrix();
+                    this.renderer.setSize(window.innerWidth, window.innerHeight);
+                    this.composer.setSize(window.innerWidth, window.innerHeight);
                 });
-
-                animate();
             }
 
-            function addEnvironment() {
-                // Background Water Noise
-                const noiseGeo = new THREE.PlaneGeometry(300, 300);
-                const noiseMat = new THREE.ShaderMaterial({
-                    uniforms: { uTime: { value: 0 } },
-                    vertexShader: `varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
-                    fragmentShader: `
-                        uniform float uTime;
-                        varying vec2 vUv;
-                        float noise(vec2 p) {
-                            return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453);
-                        }
-                        void main() {
-                            vec2 p = vUv * 4.0;
-                            float n = noise(p + uTime * 0.02);
-                            float water = sin(vUv.x * 12.0 + uTime * 0.5) * 0.2 + sin(vUv.y * 10.0 - uTime * 0.3) * 0.2;
-                            gl_FragColor = vec4(0.02, 0.12, 0.25, 0.15 + water * 0.12);
-                        }
-                    `,
-                    transparent: true, blending: THREE.AdditiveBlending, depthWrite: false
-                });
-                backgroundPlane = new THREE.Mesh(noiseGeo, noiseMat);
-                backgroundPlane.position.z = -60;
-                scene.add(backgroundPlane);
-
-                // High Quality Marine Snow
-                const count = 3000;
+            addEnvironment() {
                 const geo = new THREE.BufferGeometry();
-                const pos = new Float32Array(count * 3);
-                for (let i = 0; i < count * 3; i++) {
-                    pos[i] = (Math.random() - 0.5) * 160;
-                }
+                const pos = new Float32Array(5000 * 3);
+                for (let i = 0; i < 5000 * 3; i++) pos[i] = (Math.random() - 0.5) * 500;
                 geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
-                const mat = new THREE.PointsMaterial({ color: 0x00ffff, size: 0.12, transparent: true, opacity: 0.4, blending: THREE.AdditiveBlending });
-                particles = new THREE.Points(geo, mat);
-                scene.add(particles);
+                const mat = new THREE.PointsMaterial({ color: 0x00ffff, size: 0.5, transparent: true, opacity: 0.3 });
+                this.parts = new THREE.Points(geo, mat);
+                this.scene.add(this.parts);
+            }
 
-                // God Rays
-                const rayGeo = new THREE.PlaneGeometry(200, 200);
-                const rayMat = new THREE.ShaderMaterial({
+            addAbyssShader() {
+                const geo = new THREE.SphereGeometry(1000, 32, 32);
+                const mat = new THREE.ShaderMaterial({
+                    side: THREE.BackSide,
                     uniforms: { uTime: { value: 0 } },
-                    vertexShader: `varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
+                    vertexShader: `
+                varying vec2 vUv;
+                void main() {
+                    vUv = uv;
+                    gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+                }
+            `,
                     fragmentShader: `
-                        uniform float uTime;
-                        varying vec2 vUv;
-                        void main() {
-                            float b = sin(vUv.x * 6.0 + uTime * 0.2) * 0.5 + 0.5;
-                            float a = pow(1.0 - vUv.y, 2.0) * 0.1 * b;
-                            gl_FragColor = vec4(0.3, 0.7, 1.0, a);
-                        }
-                    `,
-                    transparent: true, blending: THREE.AdditiveBlending, side: THREE.DoubleSide, depthWrite: false
+                uniform float uTime;
+                varying vec2 vUv;
+                void main() {
+                    float noise = sin(vUv.x * 10.0 + uTime) * cos(vUv.y * 10.0 + uTime);
+                    vec3 color = mix(vec3(0.0, 0.02, 0.05), vec3(0.0, 0.05, 0.1), vUv.y + noise * 0.1);
+                    gl_FragColor = vec4(color, 1.0);
+                }
+            `
                 });
-                godRays = new THREE.Mesh(rayGeo, rayMat);
-                godRays.position.set(0, 70, -30);
-                godRays.rotation.x = Math.PI / 2.5;
-                scene.add(godRays);
+                this.abyss = new THREE.Mesh(geo, mat);
+                this.scene.add(this.abyss);
+            }
+            // --- STEP 3: 物理・最適化基盤 ---
+            initPhysics() {
+                this.clock = new THREE.Clock();
+                this.grid = new Map(); // Simple spatial hash for neighbor search
+                this.gridSize = 20;
             }
 
-            function animate() {
-                requestAnimationFrame(animate);
-                const delta = clock.getDelta();
-                const time = clock.getElapsedTime();
-
-                updateCamera();
-
-                // 1. Trails
-                if (fadeMesh) {
-                    fadeMesh.position.copy(camera.position);
-                    fadeMesh.quaternion.copy(camera.quaternion);
-                    fadeMesh.translateZ(-1.1);
-                    renderer.autoClear = false;
-                    renderer.render(fadeMesh, camera);
-                }
-
-                // 2. Logic Update
-                if (backgroundPlane) backgroundPlane.material.uniforms.uTime.value = time;
-                if (godRays) godRays.material.uniforms.uTime.value = time;
-                if (particles) {
-                    particles.rotation.y += 0.0003;
-                    const pos = particles.geometry.attributes.position.array;
-                    for (let i = 0; i < pos.length; i += 3) {
-                        pos[i + 1] -= 0.03; if (pos[i + 1] < -80) pos[i + 1] = 80;
-                    }
-                    particles.geometry.attributes.position.needsUpdate = true;
-                }
-
-                for (let i = creatures.length - 1; i >= 0; i--) {
-                    const c = creatures[i];
-                    c.update(time, delta, creatures);
-                    if (c.age > c.maxAge) { c.destroy(); creatures.splice(i, 1); }
-                }
-                document.getElementById('creature-count').textContent = `LIFE: ${creatures.length}`;
-
-                // 3. Render
-                composer.render();
-            }
-
-            // --- CAMERA ---
-            let targetRotX = 0, targetRotY = 0;
-            let currentRotX = 0, currentRotY = 0;
-            let targetZoom = 40, currentZoom = 40;
-            let isDragging = false, lastMouseX = 0, lastMouseY = 0;
-
-            function updateCamera() {
-                currentRotX = THREE.MathUtils.lerp(currentRotX, targetRotX, 0.05);
-                currentRotY = THREE.MathUtils.lerp(currentRotY, targetRotY, 0.05);
-                currentZoom = THREE.MathUtils.lerp(currentZoom, targetZoom, 0.05);
-                camera.position.x = currentZoom * Math.sin(currentRotY) * Math.cos(currentRotX);
-                camera.position.y = currentZoom * Math.sin(currentRotX);
-                camera.position.z = currentZoom * Math.cos(currentRotY) * Math.cos(currentRotX);
-                camera.lookAt(0, 0, 0);
-            }
-
-            function initInteraction() {
-                window.addEventListener('mousedown', (e) => {
-                    if (isDrawingMode) return;
-                    isDragging = true; lastMouseX = e.clientX; lastMouseY = e.clientY;
-                });
-                window.addEventListener('mousemove', (e) => {
-                    if (!isDragging || isDrawingMode) return;
-                    targetRotY += (e.clientX - lastMouseX) * 0.005;
-                    targetRotX += (e.clientY - lastMouseY) * 0.005;
-                    lastMouseX = e.clientX; lastMouseY = e.clientY;
-                });
-                window.addEventListener('mouseup', () => isDragging = false);
-                window.addEventListener('wheel', (e) => {
-                    if (isDrawingMode) return;
-                    targetZoom = THREE.MathUtils.clamp(targetZoom + e.deltaY * 0.05, 10, 100);
-                });
-
-                document.getElementById('draw-btn').onclick = () => toggleDrawingMode(true);
-                document.getElementById('reset-btn').onclick = resetEcosystem;
-                document.getElementById('sound-btn').onclick = toggleSound;
-                initDrawingCanvas();
-            }
-
-
-            // --- CREATURE CLASS (Guaranteed Birth Engine) ---
-            class Creature {
-                constructor(points, scene) {
-                    this.scene = scene;
-                    this.age = 0;
-                    this.maxAge = 40 + Math.random() * 20;
-                    this.state = 'BIRTH';
-                    this.birthDuration = 1.0;
-                    this.waitAfterBirth = 0.5;
-
-                    const types = ['fish', 'jelly', 'eel'];
-                    this.type = types[Math.floor(Math.random() * types.length)];
-                    this.color = new THREE.Color(COLORS[Math.floor(Math.random() * COLORS.length)]);
-
-                    this.pos = points && points.length > 0 ? points[0].clone() : new THREE.Vector3((Math.random() - 0.5) * 30, (Math.random() - 0.5) * 30, 0);
-                    this.vel = new THREE.Vector3((Math.random() - 0.5) * 0.2, (Math.random() - 0.5) * 0.2, (Math.random() - 0.5) * 0.1);
-                    this.acc = new THREE.Vector3();
-
-                    // Type-specific traits
-                    this.maxSpeed = this.type === 'fish' ? 0.4 : (this.type === 'eel' ? 0.25 : 0.08);
-                    this.maxForce = 0.02;
-                    this.segments = this.type === 'eel' ? 40 : (this.type === 'fish' ? 20 : 15);
-                    this.thickness = this.type === 'eel' ? 0.4 : (this.type === 'fish' ? 0.3 : 0.8);
-
-                    this.history = [];
-                    for (let i = 0; i < this.segments; i++) this.history.push(this.pos.clone());
-
-                    this.initMesh();
-                }
-
-                initMesh() {
-                    this.geometry = new THREE.BufferGeometry();
-                    const vertices = new Float32Array(this.segments * 2 * 3);
-                    const uvs = new Float32Array(this.segments * 2 * 2);
-                    for (let i = 0; i < this.segments; i++) {
-                        const u = i / (this.segments - 1);
-                        uvs[i * 4] = u; uvs[i * 4 + 1] = 0;
-                        uvs[i * 4 + 2] = u; uvs[i * 4 + 3] = 1;
-                    }
-                    this.geometry.setAttribute('position', new THREE.BufferAttribute(vertices, 3));
-                    this.geometry.setAttribute('uv', new THREE.BufferAttribute(uvs, 2));
-
-                    this.material = new THREE.ShaderMaterial({
-                        uniforms: {
-                            uColor: { value: this.color },
-                            uAlpha: { value: 0.0 },
-                            uScale: { value: 0.0 },
-                            uTime: { value: 0 }
-                        },
-                        vertexShader: `
-                            varying vec2 vUv;
-                            void main() {
-                                vUv = uv;
-                                gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-                            }
-                        `,
-                        fragmentShader: `
-                            uniform vec3 uColor;
-                            uniform float uAlpha;
-                            uniform float uScale;
-                            uniform float uTime;
-                            varying vec2 vUv;
-                            void main() {
-                                float glow = pow(1.0 - abs(vUv.y - 0.5) * 2.0, 10.0);
-                                float softGlow = pow(1.0 - abs(vUv.y - 0.5) * 2.0, 2.0);
-                                vec3 finalColor = mix(uColor * 0.5, vec3(1.0), glow);
-                                float taper = (1.0 - vUv.x * 0.7) * uScale;
-                                float pulse = 0.9 + 0.1 * sin(uTime * 4.0 - vUv.x * 10.0);
-                                gl_FragColor = vec4(finalColor, softGlow * taper * uAlpha * pulse);
-                            }
-                        `,
-                        transparent: true, blending: THREE.AdditiveBlending, side: THREE.DoubleSide, depthWrite: false
-                    });
-
-                    this.mesh = new THREE.Mesh(this.geometry, this.material);
-                    this.scene.add(this.mesh);
-                }
-
-                update(time, delta, others) {
-                    this.age += delta;
-
-                    if (this.state === 'BIRTH') {
-                        const p = Math.min(this.age / this.birthDuration, 1.0);
-                        this.material.uniforms.uAlpha.value = p;
-                        this.material.uniforms.uScale.value = p;
-                        if (p >= 1.0 && this.age > this.birthDuration + this.waitAfterBirth) this.state = 'LIVE';
-                    } else {
-                        this.flock(others);
-                        this.pos.add(this.vel);
-                        this.vel.add(this.acc);
-                        this.vel.clampLength(0.01, this.maxSpeed);
-                        this.acc.multiplyScalar(0);
-
-                        // Boundary force
-                        if (this.pos.length() > 60) this.applyForce(this.pos.clone().multiplyScalar(-0.001));
-
-                        // Natural fade out
-                        if (this.age > this.maxAge - 5) {
-                            this.material.uniforms.uAlpha.value = Math.max(0, (this.maxAge - this.age) / 5);
-                        }
-                    }
-
-                    // Trail / Geometry Update
-                    this.history.unshift(this.pos.clone());
-                    if (this.history.length > this.segments) this.history.pop();
-
-                    const attr = this.geometry.attributes.position;
-                    for (let i = 0; i < this.segments; i++) {
-                        const p = this.history[i].clone();
-                        const next = this.history[Math.min(i + 1, this.segments - 1)];
-                        const dir = p.clone().sub(next).normalize();
-                        const norm = new THREE.Vector3(-dir.y, dir.x, 0).normalize();
-
-                        // S-curve wave
-                        if (this.type !== 'jelly') {
-                            const wave = Math.sin(time * 6.0 - i * 0.5) * (i / this.segments) * 0.6;
-                            p.add(norm.clone().multiplyScalar(wave));
-                        }
-
-                        let t = this.thickness * (1.1 - i / this.segments);
-                        if (this.type === 'jelly') t *= (1.0 + 0.3 * Math.sin(time * 4.0 - i * 0.2));
-
-                        attr.setXYZ(i * 2, p.x + norm.x * t, p.y + norm.y * t, p.z);
-                        attr.setXYZ(i * 2 + 1, p.x - norm.x * t, p.y - norm.y * t, p.z);
-                    }
-                    attr.needsUpdate = true;
-                    this.material.uniforms.uTime.value = time;
-                }
-
-                applyForce(f) { this.acc.add(f); }
-
-                flock(others) {
-                    let sep = new THREE.Vector3(), ali = new THREE.Vector3(), coh = new THREE.Vector3(), pre = new THREE.Vector3();
-                    let count = 0, sepCount = 0;
-
-                    others.forEach(o => {
-                        if (o === this) return;
-                        const d = this.pos.distanceTo(o.pos);
-
-                        // Separation
-                        if (d < 4) {
-                            sep.add(this.pos.clone().sub(o.pos).normalize().divideScalar(d));
-                            sepCount++;
-                        }
-
-                        // Alignment & Cohesion (same color)
-                        if (d < 15 && o.color.getHex() === this.color.getHex()) {
-                            ali.add(o.vel);
-                            coh.add(o.pos);
-                            count++;
-                        }
-
-                        // Predation (Eel eats Fish/Jelly)
-                        if (this.type === 'eel' && (o.type === 'fish' || o.type === 'jelly') && d < 20) {
-                            pre.add(o.pos.clone().sub(this.pos).normalize());
-                        }
-                    });
-
-                    if (sepCount > 0) this.applyForce(sep.divideScalar(sepCount).setLength(this.maxForce * 1.5));
-                    if (count > 0) {
-                        this.applyForce(ali.divideScalar(count).setLength(this.maxForce * 0.8));
-                        this.applyForce(coh.divideScalar(count).sub(this.pos).setLength(this.maxForce * 0.5));
-                    }
-                    if (pre.length() > 0) this.applyForce(pre.setLength(this.maxForce * 2.0));
-
-                    // Wander
-                    this.applyForce(new THREE.Vector3((Math.random() - 0.5) * 0.01, (Math.random() - 0.5) * 0.01, (Math.random() - 0.5) * 0.01));
-                }
-
-                destroy() {
-                    this.scene.remove(this.mesh);
-                    this.geometry.dispose();
-                    this.material.dispose();
-                }
-            }
-
-            function resetEcosystem() {
-                creatures.forEach(c => c.destroy());
-                creatures = [];
-            }
-
-            // --- AUDIO LOGIC ---
-            let audioCtx, oscillator, gainNode;
-            function toggleSound() {
-                if (!audioCtx) {
-                    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-                    oscillator = audioCtx.createOscillator();
-                    gainNode = audioCtx.createGain();
-                    oscillator.type = 'sine';
-                    oscillator.frequency.value = 40; // Deep hum
-                    gainNode.gain.value = 0.05;
-                    oscillator.connect(gainNode);
-                    gainNode.connect(audioCtx.destination);
-                    oscillator.start();
-                }
-
-                isMuted = !isMuted;
-                if (isMuted) gainNode.gain.setTargetAtTime(0, audioCtx.currentTime, 0.1);
-                else gainNode.gain.setTargetAtTime(0.05, audioCtx.currentTime, 0.1);
-
-                document.getElementById('sound-icon').classList.toggle('sound-off', isMuted);
-            }
-
-            // --- DRAWING LOGIC (Bulletproof Lifecycle) ---
-            let dCanvas, dCtx, stroke = [];
-            let isDrawing = false;
-            let hasMoved = false;
-
-            function initDrawingCanvas() {
-                dCanvas = document.getElementById('drawing-canvas');
-                dCtx = dCanvas.getContext('2d');
-                resizeDrawingCanvas();
-                window.addEventListener('resize', resizeDrawingCanvas);
-
-                // Use PointerEvents as recommended
-                dCanvas.addEventListener('pointerdown', (e) => {
-                    dCanvas.setPointerCapture(e.pointerId);
-                    isDrawing = true;
-                    hasMoved = false;
-                    stroke = [{ x: e.clientX, y: e.clientY, t: Date.now() }];
-                    drawStroke(); // Initial dot
-                });
-
-                dCanvas.addEventListener('pointermove', (e) => {
-                    if (!isDrawing) return;
-                    hasMoved = true;
-                    stroke.push({ x: e.clientX, y: e.clientY, t: Date.now() });
-                    drawStroke();
-                });
-
-                dCanvas.addEventListener('pointerup', (e) => {
-                    if (!isDrawing) return;
-                    dCanvas.releasePointerCapture(e.pointerId);
-                    isDrawing = false;
-
-                    if (hasMoved) {
-                        createLifeFromStroke(stroke);
-                    }
-
-                    stroke = [];
-                    // Keep overlay until explicitly closed or birth triggered
-                    setTimeout(() => toggleDrawingMode(false), 100);
-                });
-
-                dCanvas.addEventListener('pointercancel', () => {
-                    isDrawing = false;
-                    stroke = [];
-                    toggleDrawingMode(false);
+            updateGrid() {
+                this.grid.clear();
+                this.creatures.forEach(c => {
+                    const gx = Math.floor(c.position.x / this.gridSize);
+                    const gy = Math.floor(c.position.y / this.gridSize);
+                    const gz = Math.floor(c.position.z / this.gridSize);
+                    const key = `${gx},${gy},${gz}`;
+                    if (!this.grid.has(key)) this.grid.set(key, []);
+                    this.grid.get(key).push(c);
                 });
             }
 
-            function resizeDrawingCanvas() {
-                dCanvas.width = window.innerWidth;
-                dCanvas.height = window.innerHeight;
+            // --- STEP 5: UI & Audio ---
+            initAudio() {
+                this.audioBtn = document.getElementById('sound-btn');
+                this.audioBtn.onclick = () => {
+                    if (!this.audioCtx) this.setupAudioContext();
+                    this.isMuted = !this.isMuted;
+                    this.audioBtn.innerText = `SOUND: ${this.isMuted ? 'OFF' : 'ON'}`;
+                    if (this.gainNode) this.gainNode.gain.setTargetAtTime(this.isMuted ? 0 : 0.1, this.audioCtx.currentTime, 0.1);
+                };
             }
 
-            function drawStroke() {
-                if (stroke.length === 0) return;
-                dCtx.clearRect(0, 0, dCanvas.width, dCanvas.height);
-                dCtx.beginPath();
-                dCtx.strokeStyle = '#00ffff';
-                dCtx.lineWidth = 4;
-                dCtx.lineCap = 'round';
-                dCtx.lineJoin = 'round';
-                dCtx.shadowBlur = 15;
-                dCtx.shadowColor = '#00ffff';
-
-                dCtx.moveTo(stroke[0].x, stroke[0].y);
-                for (let i = 1; i < stroke.length; i++) dCtx.lineTo(stroke[i].x, stroke[i].y);
-                dCtx.stroke();
+            setupAudioContext() {
+                this.audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+                this.osc = this.audioCtx.createOscillator();
+                this.gainNode = this.audioCtx.createGain();
+                this.osc.type = 'sine';
+                this.osc.frequency.setValueAtTime(40, this.audioCtx.currentTime); // Deep hum
+                this.gainNode.gain.setValueAtTime(0, this.audioCtx.currentTime);
+                this.osc.connect(this.gainNode);
+                this.gainNode.connect(this.audioCtx.destination);
+                this.osc.start();
             }
 
-            function toggleDrawingMode(active) {
-                isDrawingMode = active;
-                const overlay = document.getElementById('drawing-overlay');
-                overlay.classList.toggle('active', active);
-                if (active) {
-                    resizeDrawingCanvas();
-                    dCtx.clearRect(0, 0, dCanvas.width, dCanvas.height);
-                }
+            playSpawnSound() {
+                if (!this.audioCtx || this.isMuted) return;
+                const o = this.audioCtx.createOscillator();
+                const g = this.audioCtx.createGain();
+                o.type = 'triangle';
+                o.frequency.setValueAtTime(100 + Math.random() * 200, this.audioCtx.currentTime);
+                o.frequency.exponentialRampToValueAtTime(10, this.audioCtx.currentTime + 2);
+                g.gain.setValueAtTime(0.1, this.audioCtx.currentTime);
+                g.gain.linearRampToValueAtTime(0, this.audioCtx.currentTime + 2);
+                o.connect(g);
+                g.connect(this.audioCtx.destination);
+                o.start();
+                o.stop(this.audioCtx.currentTime + 2);
             }
 
-            function playBirthSound(color) {
-                if (!audioCtx || isMuted) return;
-                const chord = [261.63, 329.63, 392.00, 523.25]; // C Major
-                const freq = chord[Math.floor(Math.random() * chord.length)] * (1.0 + Math.random() * 0.1);
+            // --- STEP 1: Canvas入力 & 解析 ---
+            initSketch() {
+                this.initAudio();
+                const overlay = document.getElementById('sketch-overlay');
+                const canvas = document.getElementById('sketch-canvas');
+                const ctx = canvas.getContext('2d');
+                let drawing = false;
+                let points = [];
 
-                const osc = audioCtx.createOscillator();
-                const g = audioCtx.createGain();
-                osc.type = 'sine';
-                osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
-                osc.frequency.exponentialRampToValueAtTime(freq * 0.5, audioCtx.currentTime + 2.0);
+                canvas.width = window.innerWidth;
+                canvas.height = window.innerHeight;
 
-                g.gain.setValueAtTime(0, audioCtx.currentTime);
-                g.gain.linearRampToValueAtTime(0.1, audioCtx.currentTime + 0.1);
-                g.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 2.0);
+                document.getElementById('spawn-btn').onclick = () => {
+                    overlay.classList.add('active');
+                    ctx.clearRect(0, 0, canvas.width, canvas.height);
+                    points = [];
+                };
 
-                osc.connect(g);
-                g.connect(audioCtx.destination);
-                osc.start();
-                osc.stop(audioCtx.currentTime + 2.0);
-            }
+                const getXY = (e) => [e.clientX || e.touches[0].clientX, e.clientY || e.touches[0].clientY];
 
-            function createLifeFromStroke(points) {
-                console.log('DRAW END', points.length);
-
-                if (!points || points.length === 0) {
-                    points = [{ x: window.innerWidth / 2, y: window.innerHeight / 2 }];
-                }
-
-                // Projection
-                const worldPoints = points.map(p => {
-                    const vec = new THREE.Vector3((p.x / window.innerWidth) * 2 - 1, -(p.y / window.innerHeight) * 2 + 1, 0.5);
-                    vec.unproject(camera);
-                    const dir = vec.sub(camera.position).normalize();
-                    // Safer distance calculation
-                    const denominator = Math.abs(dir.z) > 0.001 ? dir.z : (dir.z > 0 ? 0.001 : -0.001);
-                    const distance = -camera.position.z / denominator;
-                    return camera.position.clone().add(dir.multiplyScalar(distance));
-                });
-
-                // Force Spawn
-                const creature = new Creature(worldPoints, scene);
-                creatures.push(creature);
-
-                createBirthFlash(worldPoints[0], creature.color);
-                playBirthSound(creature.color);
-                console.log(`[Birth] LIFE: ${creatures.length} TYPE: ${creature.type}`);
-            }
-
-            function createBirthFlash(pos, color) {
-                const geo = new THREE.RingGeometry(0.1, 0.5, 32);
-                const mat = new THREE.MeshBasicMaterial({ color: color, transparent: true, opacity: 0.8, side: THREE.DoubleSide });
-                const mesh = new THREE.Mesh(geo, mat);
-                mesh.position.copy(pos);
-                mesh.lookAt(camera.position);
-                scene.add(mesh);
-
-                let s = 1;
-                const animateFlash = () => {
-                    s += 0.5;
-                    mesh.scale.set(s, s, s);
-                    mesh.material.opacity *= 0.9;
-                    if (mesh.material.opacity > 0.01) requestAnimationFrame(animateFlash);
-                    else {
-                        scene.remove(mesh);
-                        geo.dispose();
-                        mat.dispose();
+                const start = (e) => { drawing = true; points = [getXY(e)]; };
+                const move = (e) => {
+                    if (!drawing) return;
+                    const pos = getXY(e);
+                    ctx.beginPath();
+                    ctx.strokeStyle = '#00ffff';
+                    ctx.lineWidth = 3;
+                    ctx.lineCap = 'round';
+                    ctx.moveTo(points[points.length - 1][0], points[points.length - 1][1]);
+                    ctx.lineTo(pos[0], pos[1]);
+                    ctx.stroke();
+                    points.push(pos);
+                };
+                const end = () => {
+                    if (!drawing) return;
+                    drawing = false;
+                    overlay.classList.remove('active');
+                    if (points.length > 5) {
+                        this.generateCreature(points);
+                        this.playSpawnSound();
                     }
                 };
-                animateFlash();
+
+                canvas.addEventListener('mousedown', start);
+                canvas.addEventListener('mousemove', move);
+                window.addEventListener('mouseup', end);
+                canvas.addEventListener('touchstart', start);
+                canvas.addEventListener('touchmove', move);
+                canvas.addEventListener('touchend', end);
             }
 
-            initScene();
-            initInteraction();
-        })();
+            // 特徴抽出 & パラメータ変換
+            analyzeSketch(points) {
+                let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+                let length = 0;
+                points.forEach((p, i) => {
+                    minX = Math.min(minX, p[0]); maxX = Math.max(maxX, p[0]);
+                    minY = Math.min(minY, p[1]); maxY = Math.max(maxY, p[1]);
+                    if (i > 0) length += Math.hypot(p[0] - points[i - 1][0], p[1] - points[i - 1][1]);
+                });
+
+                const width = maxX - minX;
+                const height = maxY - minY;
+                const aspect = width / Math.max(height, 1);
+                const size = Math.sqrt(width * height);
+                const startEndDist = Math.hypot(points[0][0] - points[points.length - 1][0], points[0][1] - points[points.length - 1][1]);
+                const isClosed = startEndDist < 50;
+
+                return { points, aspect, size, length, isClosed };
+            }
+
+            // --- STEP 2: 生物生成 ---
+            generateCreature(rawPoints) {
+                const features = this.analyzeSketch(rawPoints);
+                const creature = new Creature(features, this.scene);
+                this.creatures.push(creature);
+                document.getElementById('stats').innerText = `LIFE: ${this.creatures.length}`;
+            }
+
+            animate() {
+                requestAnimationFrame(() => this.animate());
+                const delta = this.clock.getDelta();
+                const time = this.clock.getElapsedTime();
+
+                if (this.abyss) this.abyss.material.uniforms.uTime.value = time * 0.1;
+                if (this.parts) this.parts.rotation.y += 0.001;
+
+                this.updateGrid();
+
+                for (let i = this.creatures.length - 1; i >= 0; i--) {
+                    const c = this.creatures[i];
+                    c.update(time, delta, this.creatures, this.grid, this.gridSize);
+
+                    // Predation Check (Step 3)
+                    this.checkPredation(c, i);
+                }
+
+                this.controls.update();
+                this.composer.render();
+            }
+
+            // --- STEP 3: 捕食イベント ---
+            checkPredation(predator, index) {
+                if (predator.isDead) return;
+                this.creatures.forEach((prey, j) => {
+                    if (predator === prey || prey.isDead) return;
+                    // サイズ差が1.5倍以上で捕食可能
+                    if (predator.scale > prey.scale * 1.5) {
+                        const dist = predator.position.distanceTo(prey.position);
+                        if (dist < predator.scale * 2) {
+                            prey.die();
+                            predator.onEat();
+                        }
+                    }
+                });
+
+                // クリーンアップ
+                if (predator.isDead && predator.opacity <= 0) {
+                    predator.destroy();
+                    this.creatures.splice(index, 1);
+                    document.getElementById('stats').innerText = `LIFE: ${this.creatures.length}`;
+                }
+            }
+        }
+
+        /**
+         * CREATURE CLASS
+         * 生物の定義、形状生成、挙動
+         */
+        class Creature {
+            constructor(features, scene) {
+                this.scene = scene;
+                this.features = features;
+                this.isDead = false;
+                this.opacity = 1.0;
+                this.scale = features.size * 0.05;
+                this.health = 100;
+
+                // Boids state
+                this.position = new THREE.Vector3((Math.random() - 0.5) * 100, (Math.random() - 0.5) * 100, (Math.random() - 0.5) * 100);
+                this.velocity = new THREE.Vector3(Math.random() - 0.5, Math.random() - 0.5, Math.random() - 0.5).setLength(0.2 + Math.random() * 0.3);
+                this.acceleration = new THREE.Vector3();
+                this.maxSpeed = 0.5 + Math.random() * 0.5;
+                this.maxForce = 0.02;
+
+                this.initMesh();
+            }
+
+            initMesh() {
+                const points = this.features.points.map(p => {
+                    return new THREE.Vector3(
+                        (p[0] - (window.innerWidth / 2)) * 0.1,
+                        -(p[1] - (window.innerHeight / 2)) * 0.1,
+                        0
+                    );
+                });
+
+                const center = new THREE.Vector3();
+                points.forEach(p => center.add(p));
+                center.divideScalar(points.length);
+                points.forEach(p => p.sub(center));
+
+                let geo;
+                if (this.features.isClosed && points.length > 10) {
+                    const shape = new THREE.Shape();
+                    shape.moveTo(points[0].x, points[0].y);
+                    for (let i = 1; i < points.length; i++) {
+                        shape.lineTo(points[i].x, points[i].y);
+                    }
+                    shape.closePath();
+
+                    const extrudeSettings = {
+                        steps: 1,
+                        depth: this.scale * 0.5,
+                        bevelEnabled: true,
+                        bevelThickness: this.scale * 0.2,
+                        bevelSize: this.scale * 0.2,
+                        bevelSegments: 3
+                    };
+                    geo = new THREE.ExtrudeGeometry(shape, extrudeSettings);
+                } else {
+                    const curve = new THREE.CatmullRomCurve3(points);
+                    geo = new THREE.TubeGeometry(curve, 20, this.scale * 0.2, 8, false);
+                }
+
+                const colors = [0x00ffff, 0xff00ff, 0x00ffaa, 0x66ffff, 0xffaa00];
+                this.color = new THREE.Color(colors[Math.floor(Math.random() * colors.length)]);
+
+                this.material = new THREE.MeshPhongMaterial({
+                    color: this.color,
+                    emissive: this.color,
+                    emissiveIntensity: 0.5,
+                    transparent: true,
+                    opacity: 0.8,
+                    side: THREE.DoubleSide
+                });
+
+                this.mesh = new THREE.Mesh(geo, this.material);
+                this.scene.add(this.mesh);
+            }
+
+            update(time, delta, all, grid, gridSize) {
+                if (this.isDead) {
+                    this.opacity -= 0.02;
+                    this.material.opacity = Math.max(0, this.opacity);
+                    this.mesh.scale.multiplyScalar(0.98);
+                    return;
+                }
+
+                this.applyBoids(all, grid, gridSize);
+                this.applyBoundaries();
+
+                this.velocity.add(this.acceleration);
+                this.velocity.clampLength(0.1, this.maxSpeed);
+                this.position.add(this.velocity);
+                this.acceleration.multiplyScalar(0);
+
+                // Update Mesh
+                this.mesh.position.copy(this.position);
+                this.mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), this.velocity.clone().normalize());
+
+                // Organic Animation (Step 3: 流体挙動)
+                const s = 1.0 + Math.sin(time * 3 + this.position.x) * 0.1;
+                this.mesh.scale.set(s, s, s);
+            }
+
+            applyBoids(all, grid, gridSize) {
+                const gx = Math.floor(this.position.x / gridSize);
+                const gy = Math.floor(this.position.y / gridSize);
+                const gz = Math.floor(this.position.z / gridSize);
+
+                let sep = new THREE.Vector3(), ali = new THREE.Vector3(), coh = new THREE.Vector3();
+                let count = 0;
+
+                // 近傍セルのみ検索 (Step 3: 最適化)
+                for (let x = -1; x <= 1; x++) {
+                    for (let y = -1; y <= 1; y++) {
+                        for (let z = -1; z <= 1; z++) {
+                            const key = `${gx + x},${gy + y},${gz + z}`;
+                            const neighbors = grid.get(key);
+                            if (!neighbors) continue;
+                            neighbors.forEach(o => {
+                                if (o === this) return;
+                                const d = this.position.distanceTo(o.position);
+                                if (d < 20) {
+                                    // Separation
+                                    sep.add(this.position.clone().sub(o.position).divideScalar(d));
+                                    // Alignment & Cohesion
+                                    ali.add(o.velocity);
+                                    coh.add(o.position);
+                                    count++;
+                                }
+                            });
+                        }
+                    }
+                }
+
+                if (count > 0) {
+                    sep.divideScalar(count).setLength(this.maxForce * 1.5);
+                    ali.divideScalar(count).setLength(this.maxForce * 0.8);
+                    coh.divideScalar(count).sub(this.position).setLength(this.maxForce * 0.5);
+                    this.acceleration.add(sep).add(ali).add(coh);
+                }
+
+                // Random wander
+                this.acceleration.add(new THREE.Vector3(Math.random() - 0.5, Math.random() - 0.5, Math.random() - 0.5).multiplyScalar(0.01));
+            }
+
+            applyBoundaries() {
+                const d = 150;
+                if (this.position.x > d) this.acceleration.x -= this.maxForce * 2;
+                if (this.position.x < -d) this.acceleration.x += this.maxForce * 2;
+                if (this.position.y > d) this.acceleration.y -= this.maxForce * 2;
+                if (this.position.y < -d) this.acceleration.y += this.maxForce * 2;
+                if (this.position.z > d) this.acceleration.z -= this.maxForce * 2;
+                if (this.position.z < -d) this.acceleration.z += this.maxForce * 2;
+            }
+
+            onEat() {
+                this.scale *= 1.1;
+                this.mesh.scale.multiplyScalar(1.1);
+                this.maxSpeed *= 0.95; // 重くなると遅くなる
+            }
+
+            die() {
+                this.isDead = true;
+            }
+
+            destroy() {
+                this.scene.remove(this.mesh);
+                this.mesh.geometry.dispose();
+                this.mesh.material.dispose();
+            }
+        }
+
+        // Start simulation
+        const sim = new Simulation();
+
+        // Lights
+        const light = new THREE.DirectionalLight(0xffffff, 1);
+        light.position.set(1, 1, 1);
+        sim.scene.add(light);
+        sim.scene.add(new THREE.AmbientLight(0x224466));
+
     </script>
 </body>
 
