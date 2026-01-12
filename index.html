@@ -486,7 +486,8 @@
                 this.pullDir = new THREE.Vector3();
 
                 // 質量（サイズ）に基づいて進化タイプを決定
-                this.initialScale = Math.min(Math.max(data.scale, 5), 45); // クランプ範囲を拡張
+                // クランプ範囲を拡張：Small(4)からMassive(60)まで許容
+                this.initialScale = Math.min(Math.max(data.scale, 3), 80);
                 this.currentScale = this.initialScale;
                 this.baseColor = data.color;
 
