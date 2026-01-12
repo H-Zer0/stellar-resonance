@@ -356,7 +356,7 @@
                     const w = maxX - minX, h = maxY - minY;
                     // スライダーから質量（進化タイプ）を取得
                     const stage = parseInt(massSlider.value);
-                    const massMap = { 1: 6, 2: 15, 3: 30, 4: 48 };
+                    const massMap = { 1: 4, 2: 12, 3: 35, 4: 60 };
                     const selectedMass = massMap[stage];
                     const normalized = points.map(p => [(p[0] - minX) / w - 0.5, -((p[1] - minY) / h - 0.5)]);
 
@@ -366,7 +366,7 @@
                     while (attempts < 20) {
                         let tooClose = false;
                         for (const s of this.stars) {
-                            if (birthPos.distanceTo(s.position) < 80) { // 最小距離
+                            if (birthPos.distanceTo(s.position) < 150) { // 星が大きくなったため安全距離を拡大
                                 tooClose = true;
                                 break;
                             }
@@ -442,20 +442,19 @@
                     if (s.state !== 'BLACK_HOLE' && s.state !== 'BIRTH') {
                         blackHoles.forEach(bh => {
                             const dist = s.position.distanceTo(bh.position);
-                            if (dist < 200) { // 影響範囲を拡大
+                            if (dist < 300) { // 影響範囲を拡大
                                 // 引力ベクトル
                                 const dir = new THREE.Vector3().subVectors(bh.position, s.position).normalize();
-                                const force = Math.pow((200 - dist) / 200, 2); // 距離の自乗に近い減衰
-                                s.velocity.add(dir.clone().multiplyScalar(force * 0.5));
+                                const force = Math.pow((300 - dist) / 300, 3) * 2.0; // より強力な重力場
+                                s.velocity.add(dir.clone().multiplyScalar(force * 0.8));
 
                                 // --- スパゲッティ化（潮汐破壊演出） ---
-                                // 進行方向に引き伸ばす
-                                const stretchStrength = force * 5.0;
+                                const stretchStrength = force * 8.0; // 引き伸ばしを強調
                                 s.stretchFactor = stretchStrength;
                                 s.pullDir = dir.clone();
 
                                 // イベントホライズン（吸収判定）
-                                if (dist < 10) {
+                                if (dist < 20) {
                                     s.isExpired = true; // 吸収
                                 }
                             }
@@ -493,9 +492,9 @@
 
                 if (this.initialScale <= 10) {
                     this.evolutionType = 'SMALL'; // -> 白色矮星
-                } else if (this.initialScale <= 20) {
+                } else if (this.initialScale <= 25) {
                     this.evolutionType = 'STANDARD'; // -> 赤色巨星 -> 白色矮星
-                } else if (this.initialScale <= 30) {
+                } else if (this.initialScale <= 50) {
                     this.evolutionType = 'LARGE'; // -> 超新星 -> 中性子星
                 } else {
                     this.evolutionType = 'MASSIVE'; // -> ブラックホール
@@ -548,11 +547,12 @@
                 const grad = c.createRadialGradient(64, 64, 0, 64, 64, 64);
 
                 if (this.state === 'BLACK_HOLE') {
-                    // ブラックホール専用：中心を完全に黒く、外側のエッジにわずかな光の歪みを表現
+                    // ブラックホール専用：不気味な「黒・白・暗紫」のデザイン
                     grad.addColorStop(0, 'rgba(0, 0, 0, 1)');
-                    grad.addColorStop(0.35, 'rgba(0, 0, 0, 1)');
-                    grad.addColorStop(0.38, 'rgba(100, 50, 255, 0.6)'); // 事象の地平線直後の青白い光
-                    grad.addColorStop(0.45, 'rgba(30, 0, 60, 0.4)');
+                    grad.addColorStop(0.25, 'rgba(0, 0, 0, 1)'); // 完全な黒
+                    grad.addColorStop(0.28, 'rgba(255, 255, 255, 0.9)'); // 鋭い白い光のエッジ
+                    grad.addColorStop(0.35, 'rgba(50, 0, 80, 0.8)'); // 内側の暗い紫
+                    grad.addColorStop(0.6, 'rgba(20, 0, 40, 0.0)'); // 外側へフェード
                     grad.addColorStop(1, 'transparent');
                 } else {
                     const colorStr = color.getStyle ? color.getStyle() : `hsl(${color.h * 360}, ${color.s * 100}%, ${color.l * 100}%)`;
@@ -688,13 +688,23 @@
                 }
 
                 if (this.state === 'BLACK_HOLE') {
+                    // ブラックホール専用：寿命のカウントダウン（10秒）
+                    this.blackHoleAge = (this.blackHoleAge || 0) + delta;
+
                     this.currentScale = 8;
                     this.material.color.set(0x000000);
                     this.material.emissive.set(0x000000);
                     this.material.transparent = true;
                     this.updateAuraTexture(new THREE.Color(0x330066), false);
-                    this.aura.material.blending = THREE.SubtractiveBlending; // 周囲を「吸い込む」演出
-                    this.aura.scale.setScalar(this.currentScale * 10);
+                    this.aura.material.blending = THREE.NormalBlending; // アルファブレンドで暗さを表現
+                    this.aura.scale.setScalar(this.currentScale * 12);
+
+                    if (this.blackHoleAge > 10.0) {
+                        // 10秒後に消滅（フェードアウト）
+                        const fadeOut = (this.blackHoleAge - 10.0);
+                        this.aura.material.opacity = Math.max(0, 1.0 - fadeOut);
+                        if (this.aura.material.opacity <= 0) this.isExpired = true;
+                    }
                 }
 
                 // --- 共通の消滅ロジック（フェードアウト） ---
