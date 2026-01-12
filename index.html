@@ -133,21 +133,12 @@
         }
 
         #mass-control {
-            position: absolute;
-            bottom: 20%;
-            left: 50%;
-            transform: translateX(-50%);
             width: 300px;
             display: flex;
             flex-direction: column;
             align-items: center;
-            gap: 1rem;
-            z-index: 210;
-            background: rgba(0, 0, 0, 0.4);
-            padding: 1rem;
-            border-radius: 15px;
-            border: 1px solid rgba(255, 204, 0, 0.3);
-            backdrop-filter: blur(10px);
+            gap: 0.5rem;
+            margin-bottom: 1.5rem;
         }
 
         #mass-slider {
@@ -160,8 +151,32 @@
             color: var(--accent);
             font-weight: bold;
             font-family: monospace;
-            font-size: 1.1rem;
+            font-size: 0.9rem;
             text-shadow: 0 0 10px var(--accent);
+        }
+
+        #sketch-ui-panel {
+            position: absolute;
+            bottom: 5%;
+            left: 50%;
+            transform: translateX(-50%);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            z-index: 220;
+            background: rgba(0, 5, 20, 0.7);
+            backdrop-filter: blur(20px);
+            padding: 2rem;
+            border-radius: 30px;
+            border: 1px solid rgba(255, 204, 0, 0.3);
+            box-shadow: 0 15px 50px rgba(0, 0, 0, 0.8);
+            pointer-events: auto;
+        }
+
+        #sketch-button-container {
+            display: flex;
+            gap: 1rem;
+            justify-content: center;
         }
     </style>
 </head>
@@ -182,15 +197,17 @@
     <div id="sketch-overlay">
         <div id="sketch-hint">星の核（形）を描いてください</div>
 
-        <div id="mass-control">
-            <div id="mass-label">質量: 普通 (恒星)</div>
-            <input type="range" id="mass-slider" min="5" max="45" value="18">
-        </div>
+        <div id="sketch-ui-panel">
+            <div id="mass-control">
+                <div id="mass-label">質量: 普通 (恒星)</div>
+                <input type="range" id="mass-slider" min="5" max="45" value="18">
+            </div>
 
-        <div id="sketch-ui">
-            <button class="btn" id="confirm-sketch-btn">星を誕生させる</button>
-            <button class="btn" id="clear-sketch-btn">修正</button>
-            <button class="btn" id="close-sketch-btn">戻る</button>
+            <div id="sketch-button-container">
+                <button class="btn" id="confirm-sketch-btn">誕生</button>
+                <button class="btn" id="clear-sketch-btn">修正</button>
+                <button class="btn" id="close-sketch-btn">戻る</button>
+            </div>
         </div>
         <canvas id="sketch-canvas"></canvas>
     </div>
