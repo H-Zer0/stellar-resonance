@@ -588,9 +588,8 @@
 
                         case 'LARGE':
                         case 'MASSIVE':
-                            // 巨大星・超巨大星 -> 終盤に不安定化
-                            this.mesh.scale.setScalar(1.0 + Math.sin(time * 10) * progress * 0.2);
-                            if (progress > 0.9) this.state = 'SUPERNOVA';
+                            // 巨大星・超巨大星 -> 終盤に不安定化（計算は後半の共通ロジックで実施）
+                            if (progress > 0.95) this.state = 'SUPERNOVA';
                             break;
                     }
 
@@ -699,7 +698,8 @@
                 let pulsate = 1.0;
                 if (this.state === 'EVOLUTION') {
                     if (this.evolutionType === 'LARGE' || this.evolutionType === 'MASSIVE') {
-                        pulsate = 1.0 + Math.sin(time * 10) * progress * 0.2;
+                        // 寿命の終盤（progress^4）に向けて急激に不安定化させる
+                        pulsate = 1.0 + Math.sin(time * 15) * Math.pow(progress, 4) * 0.3;
                     } else {
                         pulsate = 1.0 + Math.sin(time * 2) * 0.05;
                     }
