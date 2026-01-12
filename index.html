@@ -107,13 +107,29 @@
 
         #sketch-hint {
             position: absolute;
-            top: 10%;
+            top: 5%;
             width: 100%;
             text-align: center;
             color: var(--accent);
-            font-size: 1.2rem;
+            font-size: 1rem;
             pointer-events: none;
             letter-spacing: 0.2rem;
+            opacity: 0.7;
+        }
+
+        #sketch-controls {
+            position: absolute;
+            bottom: 10%;
+            width: 100%;
+            display: flex;
+            justify-content: center;
+            gap: 2rem;
+            pointer-events: none;
+        }
+
+        #sketch-controls .btn {
+            pointer-events: auto;
+            min-width: 120px;
         }
     </style>
 </head>
@@ -132,8 +148,12 @@
     </div>
 
     <div id="sketch-overlay">
-        <div id="sketch-hint">深海の生命を描いてください</div>
+        <div id="sketch-hint">生命の形を描き、「誕生」を押してください</div>
         <canvas id="sketch-canvas"></canvas>
+        <div id="sketch-controls">
+            <button class="btn" id="sketch-cancel">やり直す</button>
+            <button class="btn" id="sketch-confirm" style="background: var(--accent); color: var(--bg);">誕生させる</button>
+        </div>
     </div>
 
     <!-- Libraries -->
@@ -263,35 +283,66 @@
                     if (!this.audioCtx) this.setupAudioContext();
                     this.isMuted = !this.isMuted;
                     this.audioBtn.innerText = `SOUND: ${this.isMuted ? 'OFF' : 'ON'}`;
-                    if (this.gainNode) this.gainNode.gain.setTargetAtTime(this.isMuted ? 0 : 0.1, this.audioCtx.currentTime, 0.1);
+                    const gain = this.isMuted ? 0 : 0.05;
+                    if (this.baseGain) this.baseGain.gain.setTargetAtTime(gain, this.audioCtx.currentTime, 0.2);
+                    if (this.ambGain) this.ambGain.gain.setTargetAtTime(gain * 0.5, this.audioCtx.currentTime, 0.5);
+                    if (this.audioCtx.state === 'suspended') this.audioCtx.resume();
                 };
             }
 
             setupAudioContext() {
                 this.audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-                this.osc = this.audioCtx.createOscillator();
-                this.gainNode = this.audioCtx.createGain();
-                this.osc.type = 'sine';
-                this.osc.frequency.setValueAtTime(40, this.audioCtx.currentTime); // Deep hum
-                this.gainNode.gain.setValueAtTime(0, this.audioCtx.currentTime);
-                this.osc.connect(this.gainNode);
-                this.gainNode.connect(this.audioCtx.destination);
-                this.osc.start();
+
+                // --- Layer 1: Deep Hum (Base) ---
+                this.baseOsc = this.audioCtx.createOscillator();
+                this.baseGain = this.audioCtx.createGain();
+                this.baseOsc.type = 'sine';
+                this.baseOsc.frequency.setValueAtTime(40, this.audioCtx.currentTime);
+                this.baseGain.gain.setValueAtTime(0, this.audioCtx.currentTime);
+                this.baseOsc.connect(this.baseGain);
+                this.baseGain.connect(this.audioCtx.destination);
+                this.baseOsc.start();
+
+                // --- Layer 2: Ambient Texture (Higher harmonics) ---
+                this.ambOsc = this.audioCtx.createOscillator();
+                this.ambGain = this.audioCtx.createGain();
+                this.ambOsc.type = 'triangle';
+                this.ambOsc.frequency.setValueAtTime(80, this.audioCtx.currentTime);
+                this.ambGain.gain.setValueAtTime(0, this.audioCtx.currentTime);
+
+                // Add filter for underwater feel
+                const filter = this.audioCtx.createBiquadFilter();
+                filter.type = 'lowpass';
+                filter.frequency.setValueAtTime(400, this.audioCtx.currentTime);
+
+                this.ambOsc.connect(filter);
+                filter.connect(this.ambGain);
+                this.ambGain.connect(this.audioCtx.destination);
+                this.ambOsc.start();
+
+                // Slow modulation
+                const lfo = this.audioCtx.createOscillator();
+                const lfoGain = this.audioCtx.createGain();
+                lfo.frequency.setValueAtTime(0.1, this.audioCtx.currentTime);
+                lfoGain.gain.setValueAtTime(20, this.audioCtx.currentTime);
+                lfo.connect(lfoGain);
+                lfoGain.connect(this.ambOsc.frequency);
+                lfo.start();
             }
 
             playSpawnSound() {
                 if (!this.audioCtx || this.isMuted) return;
                 const o = this.audioCtx.createOscillator();
                 const g = this.audioCtx.createGain();
-                o.type = 'triangle';
-                o.frequency.setValueAtTime(100 + Math.random() * 200, this.audioCtx.currentTime);
-                o.frequency.exponentialRampToValueAtTime(10, this.audioCtx.currentTime + 2);
-                g.gain.setValueAtTime(0.1, this.audioCtx.currentTime);
-                g.gain.linearRampToValueAtTime(0, this.audioCtx.currentTime + 2);
+                o.type = 'sine';
+                o.frequency.setValueAtTime(200 + Math.random() * 400, this.audioCtx.currentTime);
+                o.frequency.exponentialRampToValueAtTime(100, this.audioCtx.currentTime + 1.5);
+                g.gain.setValueAtTime(0.05, this.audioCtx.currentTime);
+                g.gain.linearRampToValueAtTime(0, this.audioCtx.currentTime + 1.5);
                 o.connect(g);
                 g.connect(this.audioCtx.destination);
                 o.start();
-                o.stop(this.audioCtx.currentTime + 2);
+                o.stop(this.audioCtx.currentTime + 1.5);
             }
 
             // --- STEP 1: Canvas入力 & 解析 ---
@@ -301,53 +352,92 @@
                 const canvas = document.getElementById('sketch-canvas');
                 const ctx = canvas.getContext('2d');
                 let drawing = false;
-                let points = [];
+                let strokes = []; // { points: [], color: '' }
+                let currentStroke = [];
 
-                canvas.width = window.innerWidth;
-                canvas.height = window.innerHeight;
+                const resize = () => {
+                    canvas.width = window.innerWidth;
+                    canvas.height = window.innerHeight;
+                    redraw();
+                };
+                window.addEventListener('resize', resize);
+                resize();
+
+                const redraw = () => {
+                    ctx.clearRect(0, 0, canvas.width, canvas.height);
+                    ctx.lineWidth = 3;
+                    ctx.lineCap = 'round';
+                    ctx.strokeStyle = '#00ffff';
+
+                    strokes.forEach(s => {
+                        if (s.length < 2) return;
+                        ctx.beginPath();
+                        ctx.moveTo(s[0][0], s[0][1]);
+                        for (let i = 1; i < s.length; i++) ctx.lineTo(s[i][0], s[i][1]);
+                        ctx.stroke();
+                    });
+
+                    if (currentStroke.length > 1) {
+                        ctx.beginPath();
+                        ctx.moveTo(currentStroke[0][0], currentStroke[0][1]);
+                        for (let i = 1; i < currentStroke.length; i++) ctx.lineTo(currentStroke[i][0], currentStroke[i][1]);
+                        ctx.stroke();
+                    }
+                };
 
                 document.getElementById('spawn-btn').onclick = () => {
                     overlay.classList.add('active');
-                    ctx.clearRect(0, 0, canvas.width, canvas.height);
-                    points = [];
+                    strokes = [];
+                    currentStroke = [];
+                    redraw();
+                };
+
+                document.getElementById('sketch-cancel').onclick = () => {
+                    strokes = [];
+                    currentStroke = [];
+                    redraw();
+                };
+
+                document.getElementById('sketch-confirm').onclick = () => {
+                    const allPoints = [].concat(...strokes);
+                    if (allPoints.length > 10) {
+                        this.generateCreature(allPoints);
+                        this.playSpawnSound();
+                        overlay.classList.remove('active');
+                    }
                 };
 
                 const getXY = (e) => {
-                    if (e.touches && e.touches.length > 0) {
-                        return [e.touches[0].clientX, e.touches[0].clientY];
-                    }
-                    return [e.clientX, e.clientY];
+                    const rect = canvas.getBoundingClientRect();
+                    const clientX = e.clientX || (e.touches && e.touches[0].clientX);
+                    const clientY = e.clientY || (e.touches && e.touches[0].clientY);
+                    return [clientX - rect.left, clientY - rect.top];
                 };
 
-                const start = (e) => { drawing = true; points = [getXY(e)]; };
+                const start = (e) => {
+                    drawing = true;
+                    currentStroke = [getXY(e)];
+                    redraw();
+                };
                 const move = (e) => {
                     if (!drawing) return;
-                    const pos = getXY(e);
-                    ctx.beginPath();
-                    ctx.strokeStyle = '#00ffff';
-                    ctx.lineWidth = 3;
-                    ctx.lineCap = 'round';
-                    ctx.moveTo(points[points.length - 1][0], points[points.length - 1][1]);
-                    ctx.lineTo(pos[0], pos[1]);
-                    ctx.stroke();
-                    points.push(pos);
+                    currentStroke.push(getXY(e));
+                    redraw();
                 };
                 const end = () => {
                     if (!drawing) return;
                     drawing = false;
-                    overlay.classList.remove('active');
-                    if (points.length > 5) {
-                        this.generateCreature(points);
-                        this.playSpawnSound();
-                    }
+                    if (currentStroke.length > 1) strokes.push([...currentStroke]);
+                    currentStroke = [];
+                    redraw();
                 };
 
                 canvas.addEventListener('mousedown', start);
                 canvas.addEventListener('mousemove', move);
                 window.addEventListener('mouseup', end);
-                canvas.addEventListener('touchstart', start);
-                canvas.addEventListener('touchmove', move);
-                canvas.addEventListener('touchend', end);
+                canvas.addEventListener('touchstart', (e) => { e.preventDefault(); start(e); });
+                canvas.addEventListener('touchmove', (e) => { e.preventDefault(); move(e); });
+                canvas.addEventListener('touchend', (e) => { e.preventDefault(); end(e); });
             }
 
             // 特徴抽出 & パラメータ変換
@@ -373,7 +463,23 @@
             // --- STEP 2: 生物生成 ---
             generateCreature(rawPoints) {
                 const features = this.analyzeSketch(rawPoints);
-                const creature = new Creature(features, this.scene);
+                // --- World Projection Improvement ---
+                // Calculate average position in screen space to determine spawn center
+                let avgX = 0, avgY = 0;
+                rawPoints.forEach(p => { avgX += p[0]; avgY += p[1]; });
+                avgX /= rawPoints.length; avgY /= rawPoints.length;
+
+                const vector = new THREE.Vector3(
+                    (avgX / window.innerWidth) * 2 - 1,
+                    -(avgY / window.innerHeight) * 2 + 1,
+                    0.5
+                );
+                vector.unproject(this.camera);
+                const dir = vector.sub(this.camera.position).normalize();
+                const distance = 100; // Fixed distance from camera
+                const spawnPos = this.camera.position.clone().add(dir.multiplyScalar(distance));
+
+                const creature = new Creature(features, this.scene, spawnPos);
                 this.creatures.push(creature);
                 document.getElementById('stats').innerText = `LIFE: ${this.creatures.length}`;
             }
@@ -429,16 +535,15 @@
          * 生物の定義、形状生成、挙動
          */
         class Creature {
-            constructor(features, scene) {
+            constructor(features, scene, spawnPos) {
                 this.scene = scene;
                 this.features = features;
                 this.isDead = false;
-                this.opacity = 1.0;
+                this.opacity = 0.0; // Fade in
                 this.scale = features.size * 0.05;
-                this.health = 100;
 
                 // Boids state
-                this.position = new THREE.Vector3((Math.random() - 0.5) * 100, (Math.random() - 0.5) * 100, (Math.random() - 0.5) * 100);
+                this.position = spawnPos.clone() || new THREE.Vector3((Math.random() - 0.5) * 100, (Math.random() - 0.5) * 100, (Math.random() - 0.5) * 100);
                 this.velocity = new THREE.Vector3(Math.random() - 0.5, Math.random() - 0.5, Math.random() - 0.5).setLength(0.2 + Math.random() * 0.3);
                 this.acceleration = new THREE.Vector3();
                 this.maxSpeed = 0.5 + Math.random() * 0.5;
@@ -492,7 +597,7 @@
                     emissive: this.color,
                     emissiveIntensity: 0.5,
                     transparent: true,
-                    opacity: 0.8,
+                    opacity: 0.0, // Start invisible for fade in
                     side: THREE.DoubleSide
                 });
 
@@ -508,6 +613,12 @@
                     return;
                 }
 
+                // Fade in
+                if (this.opacity < 0.8) {
+                    this.opacity += 0.02;
+                    this.material.opacity = this.opacity;
+                }
+
                 this.applyBoids(all, grid, gridSize);
                 this.applyBoundaries();
 
@@ -520,7 +631,7 @@
                 this.mesh.position.copy(this.position);
                 this.mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), this.velocity.clone().normalize());
 
-                // Organic Animation (Step 3: 流体挙動)
+                // Organic Animation
                 const s = 1.0 + Math.sin(time * 3 + this.position.x) * 0.1;
                 this.mesh.scale.set(s, s, s);
             }
