@@ -548,12 +548,11 @@
                 const grad = c.createRadialGradient(64, 64, 0, 64, 64, 64);
 
                 if (this.state === 'BLACK_HOLE') {
-                    // ブラックホール専用：不気味な「黒・白・暗紫」のデザイン
+                    // ブラックホール専用：黒色の球体に白色の輪郭
                     grad.addColorStop(0, 'rgba(0, 0, 0, 1)');
-                    grad.addColorStop(0.25, 'rgba(0, 0, 0, 1)'); // 完全な黒
-                    grad.addColorStop(0.28, 'rgba(255, 255, 255, 0.9)'); // 鋭い白い光のエッジ
-                    grad.addColorStop(0.35, 'rgba(50, 0, 80, 0.8)'); // 内側の暗い紫
-                    grad.addColorStop(0.6, 'rgba(20, 0, 40, 0.0)'); // 外側へフェード
+                    grad.addColorStop(0.3, 'rgba(0, 0, 0, 1)'); // 中心〜中盤まで完全な黒
+                    grad.addColorStop(0.32, 'rgba(255, 255, 255, 1.0)'); // 鋭い白い輪郭
+                    grad.addColorStop(0.35, 'rgba(255, 255, 255, 0.2)'); // 外側へのわずかな滲み
                     grad.addColorStop(1, 'transparent');
                 } else {
                     const colorStr = color.getStyle ? color.getStyle() : `hsl(${color.h * 360}, ${color.s * 100}%, ${color.l * 100}%)`;
@@ -720,28 +719,31 @@
                     this.aura.material.blending = THREE.NormalBlending; // アルファブレンドで暗さを表現
                     this.aura.scale.setScalar(this.currentScale * 12);
 
-                    if (this.blackHoleAge > 10.0) {
-                        // 10秒後に消滅（フェードアウト）
-                        const fadeOut = (this.blackHoleAge - 10.0);
+                    if (this.blackHoleAge > 15.0) {
+                        // 15秒後に消滅（フェードアウト）
+                        const fadeOut = (this.blackHoleAge - 15.0);
                         this.aura.material.opacity = Math.max(0, 1.0 - fadeOut);
                         if (this.aura.material.opacity <= 0) this.isExpired = true;
                     }
                 }
 
                 // --- 共通の消滅ロジック（フェードアウト） ---
-                if (progress > 0.9) {
-                    const fadeProgress = (progress - 0.9) * 10; // 0.0 to 1.0
-                    this.material.opacity = Math.max(0, 0.9 * (1.0 - fadeProgress));
-                    this.aura.material.opacity = Math.max(0, 1.0 - fadeProgress);
+                // ブラックホール以外に適用
+                if (this.state !== 'BLACK_HOLE') {
+                    if (progress > 0.9) {
+                        const fadeProgress = (progress - 0.9) * 10; // 0.0 to 1.0
+                        this.material.opacity = Math.max(0, 0.9 * (1.0 - fadeProgress));
+                        this.aura.material.opacity = Math.max(0, 1.0 - fadeProgress);
 
-                    if (this.material.opacity <= 0.01 && this.aura.material.opacity <= 0.01) {
+                        if (this.material.opacity <= 0.01 && this.aura.material.opacity <= 0.01) {
+                            this.isExpired = true;
+                        }
+                    }
+
+                    // バックアップ：寿命が完全に来たら消滅
+                    if (progress > 0.995) {
                         this.isExpired = true;
                     }
-                }
-
-                // バックアップ：寿命が完全に来たら消滅
-                if (progress > 0.995) {
-                    this.isExpired = true;
                 }
 
                 // スケール適用ロジック
