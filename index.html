@@ -200,7 +200,7 @@
         <div id="sketch-ui-panel">
             <div id="mass-control">
                 <div id="mass-label">質量: 普通 (恒星)</div>
-                <input type="range" id="mass-slider" min="5" max="45" value="18">
+                <input type="range" id="mass-slider" min="1" max="4" step="1" value="2">
             </div>
 
             <div id="sketch-button-container">
@@ -307,11 +307,13 @@
                 const updateMassLabel = () => {
                     const val = parseInt(massSlider.value);
                     let type = "";
-                    if (val < 12) type = "小型星 (白色矮星へ)";
-                    else if (val < 22) type = "標準星 (赤色巨星へ)";
-                    else if (val < 32) type = "巨大星 (超新星爆発へ)";
-                    else type = "超巨大星 (ブラックホールへ)";
-                    massLabel.innerText = `質量: ${val} - ${type}`;
+                    switch (val) {
+                        case 1: type = "小型星 (白色矮星へ)"; break;
+                        case 2: type = "標準星 (赤色巨星へ)"; break;
+                        case 3: type = "巨大星 (超新星爆発へ)"; break;
+                        case 4: type = "超巨大星 (ブラックホールへ)"; break;
+                    }
+                    massLabel.innerText = `質量: ${type}`;
                 };
                 massSlider.oninput = updateMassLabel;
                 updateMassLabel();
@@ -352,9 +354,10 @@
                     const minX = Math.min(...xCoords), maxX = Math.max(...xCoords);
                     const minY = Math.min(...yCoords), maxY = Math.max(...yCoords);
                     const w = maxX - minX, h = maxY - minY;
-
-                    // スライダーから質量を取得
-                    const selectedMass = parseInt(massSlider.value);
+                    // スライダーから質量（進化タイプ）を取得
+                    const stage = parseInt(massSlider.value);
+                    const massMap = { 1: 8, 2: 18, 3: 28, 4: 40 };
+                    const selectedMass = massMap[stage];
                     const normalized = points.map(p => [(p[0] - minX) / w - 0.5, -((p[1] - minY) / h - 0.5)]);
 
                     const star = new Star({
@@ -416,19 +419,26 @@
 
                 for (let i = this.stars.length - 1; i >= 0; i--) {
                     const s = this.stars[i];
+                    s.stretch = new THREE.Vector3(1, 1, 1); // リセット
 
                     // 重力計算（ブラックホール以外の星に影響）
-                    if (s.state !== 'BLACK_HOLE') {
+                    if (s.state !== 'BLACK_HOLE' && s.state !== 'BIRTH') {
                         blackHoles.forEach(bh => {
                             const dist = s.position.distanceTo(bh.position);
-                            if (dist < 150) { // 影響範囲
+                            if (dist < 200) { // 影響範囲を拡大
                                 // 引力ベクトル
-                                const pull = new THREE.Vector3().subVectors(bh.position, s.position).normalize();
-                                const force = (150 - dist) * 0.001;
-                                s.velocity.add(pull.multiplyScalar(force));
+                                const dir = new THREE.Vector3().subVectors(bh.position, s.position).normalize();
+                                const force = Math.pow((200 - dist) / 200, 2); // 距離の自乗に近い減衰
+                                s.velocity.add(dir.clone().multiplyScalar(force * 0.5));
+
+                                // --- スパゲッティ化（潮汐破壊演出） ---
+                                // 進行方向に引き伸ばす
+                                const stretchStrength = force * 5.0;
+                                s.stretchFactor = stretchStrength;
+                                s.pullDir = dir.clone();
 
                                 // イベントホライズン（吸収判定）
-                                if (dist < 15) {
+                                if (dist < 10) {
                                     s.isExpired = true; // 吸収
                                 }
                             }
@@ -456,20 +466,22 @@
                 this.lifespan = 20.0 + Math.random() * 40.0;
                 this.state = 'BIRTH';
                 this.isExpired = false;
+                this.stretchFactor = 0;
+                this.pullDir = new THREE.Vector3();
 
                 // 質量（サイズ）に基づいて進化タイプを決定
                 this.initialScale = Math.min(Math.max(data.scale, 5), 45); // クランプ範囲を拡張
                 this.currentScale = this.initialScale;
                 this.baseColor = data.color;
 
-                if (this.initialScale < 12) {
+                if (this.initialScale <= 10) {
                     this.evolutionType = 'SMALL'; // -> 白色矮星
-                } else if (this.initialScale < 22) {
+                } else if (this.initialScale <= 20) {
                     this.evolutionType = 'STANDARD'; // -> 赤色巨星 -> 白色矮星
-                } else if (this.initialScale < 32) {
+                } else if (this.initialScale <= 30) {
                     this.evolutionType = 'LARGE'; // -> 超新星 -> 中性子星
                 } else {
-                    this.evolutionType = 'MASSIVE'; // -> 超新星 -> ブラックホール
+                    this.evolutionType = 'MASSIVE'; // -> ブラックホール
                 }
 
                 this.position = new THREE.Vector3((Math.random() - 0.5) * 400, (Math.random() - 0.5) * 400, (Math.random() - 0.5) * 400);
@@ -517,16 +529,25 @@
                 const c = this.auraCtx;
                 c.clearRect(0, 0, 128, 128);
                 const grad = c.createRadialGradient(64, 64, 0, 64, 64, 64);
-                const colorStr = color.getStyle ? color.getStyle() : `hsl(${color.h * 360}, ${color.s * 100}%, ${color.l * 100}%)`;
 
-                if (forceWhiteCenter) {
-                    grad.addColorStop(0, 'white');
-                    grad.addColorStop(0.2, 'white');
+                if (this.state === 'BLACK_HOLE') {
+                    // ブラックホール専用：中心を完全に黒く、外側を紫/青系の深い色に
+                    grad.addColorStop(0, 'rgba(0, 0, 0, 1)');
+                    grad.addColorStop(0.3, 'rgba(0, 0, 0, 1)');
+                    grad.addColorStop(0.4, 'rgba(50, 0, 100, 0.8)');
+                    grad.addColorStop(0.6, 'rgba(20, 0, 40, 0.4)');
+                    grad.addColorStop(1, 'transparent');
                 } else {
-                    grad.addColorStop(0, 'rgba(255, 255, 255, 0.8)');
+                    const colorStr = color.getStyle ? color.getStyle() : `hsl(${color.h * 360}, ${color.s * 100}%, ${color.l * 100}%)`;
+                    if (forceWhiteCenter) {
+                        grad.addColorStop(0, 'white');
+                        grad.addColorStop(0.2, 'white');
+                    } else {
+                        grad.addColorStop(0, 'rgba(255, 255, 255, 0.8)');
+                    }
+                    grad.addColorStop(0.4, colorStr);
+                    grad.addColorStop(1, 'transparent');
                 }
-                grad.addColorStop(0.4, colorStr);
-                grad.addColorStop(1, 'transparent');
 
                 c.fillStyle = grad;
                 c.fillRect(0, 0, 128, 128);
@@ -590,12 +611,34 @@
                 }
 
                 if (this.state === 'SUPERNOVA') {
-                    this.currentScale *= 1.05;
-                    this.material.emissiveIntensity += 0.5;
-                    if (this.material.emissiveIntensity > 15) {
-                        if (this.evolutionType === 'LARGE') this.state = 'NEUTRON_STAR';
-                        else this.state = 'BLACK_HOLE';
-                        this.material.emissiveIntensity = 1.0;
+                    if (this.evolutionType === 'MASSIVE') {
+                        // 超巨大星の爆縮演出
+                        this.currentScale *= 1.1; // 最初は少し膨張
+                        this.material.emissiveIntensity += 1.0;
+                        if (this.material.emissiveIntensity > 15) {
+                            this.state = 'IMPLOSION';
+                        }
+                    } else {
+                        this.currentScale *= 1.05;
+                        this.material.emissiveIntensity += 0.5;
+                        if (this.material.emissiveIntensity > 15) {
+                            if (this.evolutionType === 'LARGE') this.state = 'NEUTRON_STAR';
+                            else this.state = 'BLACK_HOLE'; // フォールバック用
+                            this.material.emissiveIntensity = 1.0;
+                        }
+                    }
+                }
+
+                if (this.state === 'IMPLOSION') {
+                    // 中心に「ギュッ」と凝縮する演出
+                    this.currentScale *= 0.6;
+                    this.material.emissiveIntensity += 5.0;
+                    this.aura.scale.multiplyScalar(0.8);
+                    if (this.currentScale < 1.5) {
+                        this.state = 'BLACK_HOLE';
+                        this.material.emissiveIntensity = 0;
+                        this.material.opacity = 1;
+                        this.updateAuraTexture();
                     }
                 }
 
@@ -671,11 +714,26 @@
                 const s = this.currentScale / this.initialScale;
                 this.mesh.scale.setScalar(s * pulsate);
 
+                // スパゲッティ化：引力方向に引き伸ばし
+                if (this.stretchFactor > 0.1) {
+                    const stretchVec = new THREE.Vector3(1 + this.stretchFactor, 1 / (1 + this.stretchFactor * 0.5), 1 / (1 + this.stretchFactor * 0.5));
+                    // 進行方向（ブラックホール方向）に向ける
+                    this.mesh.quaternion.setFromUnitVectors(new THREE.Vector3(1, 0, 0), this.pullDir);
+                    this.mesh.scale.multiply(stretchVec);
+                    this.stretchFactor *= 0.8; // 減衰
+                } else {
+                    this.mesh.rotation.y += 0.01;
+                    this.mesh.rotation.x += 0.005;
+                }
+
                 // オーラのスケーリング（ブラックホール以外はAdditive）
                 if (this.state !== 'BLACK_HOLE') {
                     this.aura.scale.setScalar(this.currentScale * 8 * pulsate);
+                    if (this.stretchFactor > 0.1) {
+                        this.aura.scale.x *= (1 + this.stretchFactor * 1.5);
+                    }
                 } else {
-                    this.aura.scale.setScalar(this.currentScale * 10);
+                    this.aura.scale.setScalar(this.currentScale * 12);
                 }
 
                 this.position.add(this.velocity);
