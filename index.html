@@ -76,6 +76,8 @@
             text-transform: uppercase;
             letter-spacing: 0.1em;
             font-weight: bold;
+            pointer-events: auto;
+            /* Ensure clickable */
         }
 
         .btn:hover {
@@ -310,7 +312,12 @@
                     points = [];
                 };
 
-                const getXY = (e) => [e.clientX || e.touches[0].clientX, e.clientY || e.touches[0].clientY];
+                const getXY = (e) => {
+                    if (e.touches && e.touches.length > 0) {
+                        return [e.touches[0].clientX, e.touches[0].clientY];
+                    }
+                    return [e.clientX, e.clientY];
+                };
 
                 const start = (e) => { drawing = true; points = [getXY(e)]; };
                 const move = (e) => {
