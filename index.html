@@ -629,34 +629,51 @@
                 if (this.state === 'SUPERNOVA') {
                     if (this.evolutionType === 'MASSIVE') {
                         // 超巨大星の爆縮演出
-                        this.currentScale *= 1.02; // わずかな膨張
-                        this.material.emissiveIntensity += 1.0;
-                        if (this.material.emissiveIntensity > 20) {
+                        this.currentScale *= 1.05;
+                        this.material.emissiveIntensity += 2.0;
+                        // 爆発直前の色の揺らぎ
+                        this.material.color.lerp(new THREE.Color(0xffffff), 0.2);
+                        if (this.material.emissiveIntensity > 50) {
                             this.state = 'IMPLOSION';
+                            // 爆縮開始時にサイズを強制的にリセットして確実に小さくする準備
                         }
                     } else {
-                        // 巨大星：一気に巨大化して爆発（不安定化なしの純粋な爆発）
-                        this.currentScale *= 1.15;
-                        this.material.emissiveIntensity += 0.8;
-                        this.material.opacity -= 0.05;
-                        if (this.material.opacity <= 0.1) {
+                        // 巨大星：神秘的な超新星爆発
+                        // 単なる膨張ではなく、衝撃波を表現
+                        this.currentScale *= 1.1;
+                        this.material.emissiveIntensity += 1.5;
+                        this.material.opacity -= 0.04;
+
+                        // 色を青白く変化させ、神々しさを出す
+                        this.material.color.lerp(new THREE.Color(0x88ccff), 0.1);
+                        this.material.emissive.lerp(new THREE.Color(0x00ffff), 0.1);
+
+                        // オーラを衝撃波として拡散
+                        this.aura.scale.multiplyScalar(1.15);
+                        this.aura.material.opacity -= 0.02;
+
+                        if (this.material.opacity <= 0) {
                             this.state = 'NEUTRON_STAR';
                             this.material.emissiveIntensity = 1.0;
                             this.material.opacity = 1.0;
+                            this.aura.material.opacity = 1.0; // リセット
                         }
                     }
                 }
 
                 if (this.state === 'IMPLOSION') {
                     // 中心に「ギュッ」と凝縮する演出
-                    this.currentScale *= 0.6;
+                    // 絶対値ではなく比率で小さくするが、収束判定を緩和
+                    this.currentScale *= 0.5;
                     this.material.emissiveIntensity += 5.0;
-                    this.aura.scale.multiplyScalar(0.8);
-                    if (this.currentScale < 1.5) {
+                    this.aura.scale.multiplyScalar(0.7);
+
+                    // サイズが十分小さくなったらブラックホール化
+                    if (this.currentScale < 10.0) { // 判定を緩和
                         this.state = 'BLACK_HOLE';
                         this.material.emissiveIntensity = 0;
                         this.material.opacity = 1;
-                        this.updateAuraTexture();
+                        this.updateAuraTexture(new THREE.Color(0x330066), false); // 引数を正しく渡す
                     }
                 }
 
