@@ -4,13 +4,12 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>DEEP SEA SYMBIOSIS | Resonance v4</title>
-    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@3.18.0/dist/tf.min.js"></script>
+    <title>STELLAR CYCLE | Resonance</title>
     <style>
         :root {
-            --accent: #00ffff;
-            --bg: #000814;
-            --glass: rgba(0, 30, 60, 0.5);
+            --accent: #f0faff;
+            --bg: #000205;
+            --glass: rgba(10, 20, 40, 0.6);
         }
 
         * {
@@ -22,7 +21,7 @@
 
         body {
             background: var(--bg);
-            font-family: 'Inter', system-ui, sans-serif;
+            font-family: 'Outfit', sans-serif;
             color: white;
             -webkit-user-select: none;
             user-select: none;
@@ -36,57 +35,60 @@
             display: flex;
             flex-direction: column;
             justify-content: space-between;
-            padding: 2rem;
+            padding: 2.5rem;
         }
 
         .glass-panel {
             pointer-events: auto;
             background: var(--glass);
-            backdrop-filter: blur(20px);
-            border: 1px solid rgba(0, 255, 255, 0.2);
-            border-radius: 16px;
-            padding: 1.5rem;
+            backdrop-filter: blur(25px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 20px;
+            padding: 1.5rem 2rem;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.8);
         }
 
         h1 {
-            font-size: 1.2rem;
-            letter-spacing: 0.4em;
+            font-size: 1.4rem;
+            letter-spacing: 0.5em;
             color: var(--accent);
             text-transform: uppercase;
+            font-weight: 300;
         }
 
         #bottom-bar {
             display: flex;
             align-items: center;
-            gap: 1rem;
+            gap: 1.5rem;
             justify-content: center;
         }
 
         .btn {
-            background: rgba(0, 255, 255, 0.1);
-            border: 1px solid var(--accent);
-            color: var(--accent);
-            padding: 1rem 2.5rem;
-            border-radius: 40px;
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.3);
+            color: white;
+            padding: 1.2rem 3rem;
+            border-radius: 50px;
             cursor: pointer;
-            transition: 0.4s;
+            transition: 0.5s cubic-bezier(0.19, 1, 0.22, 1);
             text-transform: uppercase;
-            letter-spacing: 0.15em;
-            font-weight: bold;
+            letter-spacing: 0.2em;
+            font-size: 0.9rem;
             pointer-events: auto;
         }
 
         .btn:hover {
-            background: var(--accent);
-            color: var(--bg);
-            box-shadow: 0 0 20px var(--accent);
+            background: white;
+            color: black;
+            box-shadow: 0 0 30px rgba(255, 255, 255, 0.4);
+            transform: translateY(-2px);
         }
 
         #sketch-overlay {
             position: absolute;
             inset: 0;
             z-index: 200;
-            background: rgba(0, 5, 15, 0.9);
+            background: rgba(0, 0, 0, 0.92);
             display: none;
             cursor: crosshair;
         }
@@ -108,8 +110,21 @@
             width: 100%;
             display: flex;
             justify-content: center;
-            gap: 1.5rem;
+            gap: 2rem;
             z-index: 210;
+        }
+
+        #sketch-hint {
+            position: absolute;
+            top: 12%;
+            width: 100%;
+            text-align: center;
+            color: white;
+            font-size: 1.6rem;
+            pointer-events: none;
+            letter-spacing: 0.4rem;
+            z-index: 210;
+            font-weight: 200;
         }
     </style>
 </head>
@@ -118,19 +133,22 @@
 
     <div id="ui-overlay">
         <div id="top-bar" class="glass-panel">
-            <h1>Deep Sea Symbiosis</h1>
-            <div id="stats" style="font-family: monospace; color: var(--accent);">LIFE: 0</div>
+            <h1>Stellar Cycle</h1>
+            <div id="stats"
+                style="font-family: 'Courier New', monospace; letter-spacing: 0.1em; color: rgba(255,255,255,0.6);">
+                STARS: 0</div>
         </div>
         <div id="bottom-bar">
-            <button class="btn" id="open-sketch-btn">生命を創印する</button>
+            <button class="btn" id="open-sketch-btn">星を創造する</button>
             <button class="btn" id="sound-toggle-btn">SOUND: OFF</button>
         </div>
     </div>
 
     <div id="sketch-overlay">
+        <div id="sketch-hint">深宇宙に描く輝きのカタチ</div>
         <div id="sketch-ui">
-            <button class="btn" id="confirm-sketch-btn">深海へ解き放つ</button>
-            <button class="btn" id="clear-sketch-btn">リセット</button>
+            <button class="btn" id="confirm-sketch-btn">宇宙へ放つ</button>
+            <button class="btn" id="clear-sketch-btn">無に帰す</button>
             <button class="btn" id="close-sketch-btn">閉じる</button>
         </div>
         <canvas id="sketch-canvas"></canvas>
@@ -142,96 +160,79 @@
     <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/EffectComposer.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/RenderPass.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/UnrealBloomPass.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/shaders/LuminosityHighPassShader.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/ShaderPass.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/shaders/CopyShader.js"></script>
 
     <script>
         /**
-         * DEEP SEA SYMBIOSIS | Resonance v4
-         * Fix: Scaling normalization, Dynamic Predation, Field Lighting.
+         * STELLAR CYCLE | Resonance
+         * A cosmic simulation of star birth and supernova.
          */
 
         class Simulation {
             constructor() {
-                this.creatures = [];
+                this.stars = [];
                 this.isMuted = true;
+                this.audioCtx = null;
+                this.gainNode = null;
+                this.bgmPlaying = false;
 
                 this.initThree();
-                this.initPhysics();
                 this.initSketchLayer();
                 this.animate();
             }
 
             initThree() {
                 this.scene = new THREE.Scene();
-                // 遠景を自然にするフォグを追加
-                this.scene.fog = new THREE.FogExp2(0x000208, 0.003);
+                this.scene.fog = new THREE.FogExp2(0x000205, 0.001);
 
-                this.camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 2000);
-                this.camera.position.set(0, 40, 150);
+                this.camera = new THREE.PerspectiveCamera(65, window.innerWidth / window.innerHeight, 1, 5000);
+                this.camera.position.set(0, 100, 400);
 
-                this.renderer = new THREE.WebGLRenderer({ antialias: true });
+                this.renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
                 this.renderer.setSize(window.innerWidth, window.innerHeight);
                 this.renderer.setPixelRatio(window.devicePixelRatio);
-                this.renderer.setClearColor(0x000510);
+                this.renderer.setClearColor(0x000205);
                 document.body.appendChild(this.renderer.domElement);
 
                 this.controls = new THREE.OrbitControls(this.camera, this.renderer.domElement);
                 this.controls.enableDamping = true;
+                this.controls.autoRotate = true;
+                this.controls.autoRotateSpeed = 0.2;
 
-                // --- STEP 3: フィールドのライティング強化 ---
-                const amb = new THREE.AmbientLight(0x405060, 1.0); // 遠くも明るく
-                this.scene.add(amb);
+                // Lighting: Space Optimization
+                this.scene.add(new THREE.AmbientLight(0x111122, 0.5));
+                const centerLight = new THREE.PointLight(0xffffff, 0.5, 1000);
+                this.scene.add(centerLight);
 
-                const dir = new THREE.DirectionalLight(0xffffff, 0.8);
-                dir.position.set(0, 100, 100);
-                this.scene.add(dir);
-
-                const point = new THREE.PointLight(0x00ffff, 1.2, 500);
-                point.position.set(0, 0, 0);
-                this.scene.add(point);
-
-                // Post-processing: 発光（ボワボワ）を適正化
-                const renderScene = new THREE.RenderPass(this.scene, this.camera);
-                this.bloomPass = new THREE.UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 1.2, 0.4, 0.9);
-                this.bloomPass.threshold = 0.2;
-                this.bloomPass.strength = 1.0;
-                this.bloomPass.radius = 0.4;
+                // Post-processing
+                const renderPass = new THREE.RenderPass(this.scene, this.camera);
+                const bloomPass = new THREE.UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 2.5, 0.4, 0.85);
+                bloomPass.threshold = 0.1;
+                bloomPass.strength = 2.0;
+                bloomPass.radius = 0.8;
 
                 this.composer = new THREE.EffectComposer(this.renderer);
-                this.composer.addPass(renderScene);
-                this.composer.addPass(this.bloomPass);
+                this.composer.addPass(renderPass);
+                this.composer.addPass(bloomPass);
 
-                this.addEnvironment();
+                this.addBackgroundStars();
             }
 
-            addEnvironment() {
+            addBackgroundStars() {
                 const geo = new THREE.BufferGeometry();
-                const pos = new Float32Array(5000 * 3);
-                for (let i = 0; i < 5000; i++) {
-                    pos[i * 3] = (Math.random() - 0.5) * 600;
-                    pos[i * 3 + 1] = (Math.random() - 0.5) * 600;
-                    pos[i * 3 + 2] = (Math.random() - 0.5) * 600;
+                const pos = new Float32Array(15000 * 3);
+                const col = new Float32Array(15000 * 3);
+                for (let i = 0; i < 15000; i++) {
+                    pos[i * 3] = (Math.random() - 0.5) * 4000;
+                    pos[i * 3 + 1] = (Math.random() - 0.5) * 4000;
+                    pos[i * 3 + 2] = (Math.random() - 0.5) * 4000;
+                    const lum = 0.5 + Math.random() * 0.5;
+                    col[i * 3] = lum; col[i * 3 + 1] = lum; col[i * 3 + 2] = lum;
                 }
                 geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
-                const mat = new THREE.PointsMaterial({ color: 0x00ffff, size: 0.8, transparent: true, opacity: 0.4 });
-                this.scene.add(new THREE.Points(geo, mat));
-            }
-
-            initPhysics() {
-                this.clock = new THREE.Clock();
-                this.grid = new Map();
-                this.gridSize = 30;
-            }
-
-            updateGrid() {
-                this.grid.clear();
-                this.creatures.forEach(c => {
-                    const k = `${Math.floor(c.position.x / this.gridSize)},${Math.floor(c.position.y / this.gridSize)},${Math.floor(c.position.z / this.gridSize)}`;
-                    if (!this.grid.has(k)) this.grid.set(k, []);
-                    this.grid.get(k).push(c);
-                });
+                geo.setAttribute('color', new THREE.BufferAttribute(col, 3));
+                const mat = new THREE.PointsMaterial({ size: 1.5, vertexColors: true, transparent: true, opacity: 0.8 });
+                this.bgStars = new THREE.Points(geo, mat);
+                this.scene.add(this.bgStars);
             }
 
             initSketchLayer() {
@@ -264,9 +265,11 @@
                     if (!isDrawing) return;
                     const p = getXY(e);
                     ctx.beginPath();
-                    ctx.strokeStyle = '#00ffff';
-                    ctx.lineWidth = 4;
+                    ctx.strokeStyle = 'white';
+                    ctx.lineWidth = 3;
                     ctx.lineCap = 'round';
+                    ctx.shadowBlur = 20;
+                    ctx.shadowColor = 'rgba(255,255,255,0.8)';
                     const last = points[points.length - 1];
                     ctx.moveTo(last[0], last[1]);
                     ctx.lineTo(p[0], p[1]);
@@ -276,34 +279,20 @@
                 canvas.onpointerup = () => { isDrawing = false; };
 
                 document.getElementById('confirm-sketch-btn').onclick = () => {
-                    if (points.length < 10) return;
+                    if (points.length < 5) return;
 
-                    // --- STEP 1: 正規化解析 ---
+                    // Analyze Sketch for Star Params
                     const xCoords = points.map(p => p[0]);
                     const yCoords = points.map(p => p[1]);
                     const minX = Math.min(...xCoords), maxX = Math.max(...xCoords);
                     const minY = Math.min(...yCoords), maxY = Math.max(...yCoords);
                     const w = maxX - minX, h = maxY - minY;
+                    const size = Math.max(w, h);
 
-                    // ワールド内での基本サイズを15〜30に制限
-                    const baseScale = Math.min(Math.max(Math.sqrt(w * h) * 0.05, 10), 30);
+                    // Normalized Shape
+                    const normalized = points.map(p => [(p[0] - minX) / w - 0.5, (p[1] - minY) / h - 0.5]);
 
-                    const normalizedPoints = points.map(p => [
-                        (p[0] - minX) / (w || 1) - 0.5,
-                        -((p[1] - minY) / (h || 1) - 0.5)
-                    ]);
-
-                    const dSE = Math.hypot(points[0][0] - points[points.length - 1][0], points[0][1] - points[points.length - 1][1]);
-                    const isClosed = dSE < Math.max(w, h) * 0.3;
-
-                    const c = new Creature({
-                        points: normalizedPoints,
-                        scale: baseScale,
-                        isClosed: isClosed
-                    }, this.scene);
-
-                    this.creatures.push(c);
-                    document.getElementById('stats').innerText = `LIFE: ${this.creatures.length}`;
+                    this.createStar(normalized, size);
                     this.startBgm();
                     overlay.classList.remove('active');
                 };
@@ -315,6 +304,12 @@
                 };
             }
 
+            createStar(shape, pixelSize) {
+                const star = new Star(shape, pixelSize, this.scene);
+                this.stars.push(star);
+                document.getElementById('stats').innerText = `STARS: ${this.stars.length}`;
+            }
+
             startBgm() {
                 if (this.bgmPlaying) return;
                 this.audioCtx = new (window.AudioContext || window.webkitAudioContext)();
@@ -322,7 +317,7 @@
                 this.gainNode.gain.setValueAtTime(0, this.audioCtx.currentTime);
                 this.gainNode.connect(this.audioCtx.destination);
 
-                const fetchBgm = async () => {
+                const load = async () => {
                     try {
                         const res = await fetch('assets/bgm.mp3');
                         const buf = await res.arrayBuffer();
@@ -332,9 +327,9 @@
                         src.connect(this.gainNode);
                         src.start(0);
                         this.gainNode.gain.setTargetAtTime(this.isMuted ? 0 : 0.2, this.audioCtx.currentTime, 2.0);
-                    } catch (e) { /* fallback to drone if file missing */ }
+                    } catch (e) { console.warn("Space BGM load failed."); }
                 };
-                fetchBgm();
+                load();
                 this.bgmPlaying = true;
             }
 
@@ -343,118 +338,164 @@
                 const delta = this.clock.getDelta();
                 const time = this.clock.getElapsedTime();
 
-                this.updateGrid();
-
-                for (let i = this.creatures.length - 1; i >= 0; i--) {
-                    const c = this.creatures[i];
-                    c.update(time, delta);
-
-                    // --- STEP 2: 捕食ロジックの実装 ---
-                    this.creatures.forEach(prey => {
-                        if (c === prey || c.isDead || prey.isDead) return;
-                        if (c.scale > prey.scale * 1.3) {
-                            const dist = c.position.distanceTo(prey.position);
-                            if (dist < c.scale * 1.2) {
-                                prey.die();
-                                c.eat(prey.scale);
-                            }
-                        }
-                    });
-
-                    if (c.isDead && c.opacity <= 0) {
-                        c.dispose();
-                        this.creatures.splice(i, 1);
-                        document.getElementById('stats').innerText = `LIFE: ${this.creatures.length}`;
+                for (let i = this.stars.length - 1; i >= 0; i--) {
+                    const s = this.stars[i];
+                    s.update(delta, time);
+                    if (s.isGone) {
+                        s.dispose();
+                        this.stars.splice(i, 1);
+                        document.getElementById('stats').innerText = `STARS: ${this.stars.length}`;
                     }
                 }
 
+                if (this.bgStars) this.bgStars.rotation.y += 0.0001;
                 this.controls.update();
                 this.composer.render();
             }
         }
 
-        class Creature {
-            constructor(data, scene) {
+        class Star {
+            constructor(shape, pixelSize, scene) {
                 this.scene = scene;
-                this.isDead = false;
-                this.opacity = 0;
-                this.scale = data.scale;
-                this.targetScale = data.scale;
+                this.isExploding = false;
+                this.isGone = false;
+                this.age = 0;
+                this.lifespan = 20 + Math.random() * 40; // Seconds of life
 
-                this.position = new THREE.Vector3((Math.random() - 0.5) * 250, (Math.random() - 0.5) * 250, (Math.random() - 0.5) * 250);
-                this.velocity = new THREE.Vector3(Math.random() - 0.5, Math.random() - 0.5, Math.random() - 0.5).setLength(0.5);
-                this.acceleration = new THREE.Vector3();
+                // Initial Scaling from Sketch
+                this.baseSize = Math.max(5, pixelSize * 0.15);
+                this.position = new THREE.Vector3((Math.random() - 0.5) * 800, (Math.random() - 0.5) * 800, (Math.random() - 0.5) * 800);
 
-                this.initMesh(data);
+                this.initMesh(shape);
             }
 
-            initMesh(data) {
-                const points = data.points.map(p => new THREE.Vector3(p[0] * this.scale, p[1] * this.scale, 0));
-                let geo;
-                if (data.isClosed) {
-                    const shape = new THREE.Shape();
-                    shape.moveTo(points[0].x, points[0].y);
-                    points.forEach(p => shape.lineTo(p.x, p.y));
-                    geo = new THREE.ExtrudeGeometry(shape, { depth: this.scale * 0.2, bevelEnabled: true, bevelSize: 1, bevelThickness: 1 });
-                } else {
-                    const curve = new THREE.CatmullRomCurve3(points);
-                    geo = new THREE.TubeGeometry(curve, 24, this.scale * 0.1, 8, false);
-                }
+            initMesh(shape) {
+                // Create Mesh from Sketch Path
+                const points = shape.map(p => new THREE.Vector3(p[0] * this.baseSize, p[1] * this.baseSize, 0));
 
-                const colors = [0x00ffff, 0xff00ff, 0x00ffaa, 0x55ffaa, 0x77eeff];
-                this.color = new THREE.Color(colors[Math.floor(Math.random() * colors.length)]);
-
-                this.material = new THREE.MeshPhongMaterial({
-                    color: this.color,
-                    emissive: this.color,
-                    emissiveIntensity: 0.6, // ボワボワを抑える
-                    transparent: true,
-                    opacity: 0,
-                    side: THREE.DoubleSide
+                // Use a glowing sphere as core, and the sketch as a "Stellar Halo"
+                const coreGeo = new THREE.IcosahedronGeometry(this.baseSize * 0.4, 4);
+                this.material = new THREE.MeshStandardMaterial({
+                    color: 0xffffff,
+                    emissive: 0xffffff,
+                    emissiveIntensity: 1.5
                 });
+                this.core = new THREE.Mesh(coreGeo, this.material);
 
-                this.mesh = new THREE.Mesh(geo, this.material);
-                this.scene.add(this.mesh);
+                // Halo from Sketch
+                const haloCurve = new THREE.CatmullRomCurve3(points);
+                const haloGeo = new THREE.TubeGeometry(haloCurve, 32, this.baseSize * 0.05, 8, true);
+                this.halo = new THREE.Mesh(haloGeo, this.material);
+
+                this.group = new THREE.Group();
+                this.group.add(this.core);
+                this.group.add(this.halo);
+                this.group.position.copy(this.position);
+
+                this.scene.add(this.group);
+
+                // Dynamic Point Light
+                this.light = new THREE.PointLight(0xffffff, 2, 300);
+                this.group.add(this.light);
             }
 
-            update(time, delta) {
-                if (this.isDead) this.opacity -= 0.02;
-                else if (this.opacity < 0.9) this.opacity += 0.05;
-                this.material.opacity = Math.max(0, this.opacity);
+            update(delta, time) {
+                if (this.isGone) return;
 
-                // 吸収時の成長アニメーション
-                this.scale = THREE.MathUtils.lerp(this.scale, this.targetScale, 0.1);
-                const s = (1.0 + Math.sin(time * 4) * 0.1) * (this.scale / this.targetScale);
-                this.mesh.scale.set(s, s, s);
+                this.age += delta;
+                const progress = this.age / this.lifespan;
 
-                if (!this.isDead) {
-                    this.applyBoundaries();
-                    this.velocity.add(this.acceleration);
-                    this.velocity.clampLength(0.2, 1.0);
-                    this.position.add(this.velocity);
-                    this.acceleration.multiplyScalar(0);
+                if (!this.isExploding) {
+                    // --- STEP 6: 星の色の多様性 & 年齢変化 ---
+                    this.updateAppearance(progress, time);
+
+                    if (progress >= 1.0) {
+                        this.explode();
+                    }
+                } else {
+                    this.updateExplosion(delta);
                 }
-
-                this.mesh.position.copy(this.position);
-                this.mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), this.velocity.clone().normalize());
             }
 
-            applyBoundaries() {
-                const d = 200; // フィールド範囲を適正化
-                if (Math.abs(this.position.x) > d) this.acceleration.x += (this.position.x > 0 ? -0.1 : 0.1);
-                if (Math.abs(this.position.y) > d) this.acceleration.y += (this.position.y > 0 ? -0.1 : 0.1);
-                if (Math.abs(this.position.z) > d) this.acceleration.z += (this.position.z > 0 ? -0.1 : 0.1);
+            updateAppearance(p, time) {
+                // Star Color Evolution: Blue-White -> Yellow -> Orange -> Red
+                let starColor = new THREE.Color();
+                if (p < 0.2) starColor.setHSL(0.55, 0.8, 0.9); // Blue-White
+                else if (p < 0.6) starColor.setHSL(0.12, 1.0, 0.7); // Golden
+                else if (p < 0.9) starColor.setHSL(0.08, 1.0, 0.6); // Orange
+                else starColor.setHSL(0.0, 1.0, 0.5); // Deep Red (Giant Phase)
+
+                this.material.emissive.copy(starColor);
+                this.material.color.copy(starColor);
+                this.light.color.copy(starColor);
+
+                // Size Pulse & Growth
+                const growth = 1.0 + p * 1.5; // Expands as it ages
+                const pulse = 1.0 + Math.sin(time * 5 + this.position.x) * 0.05;
+                this.group.scale.set(growth * pulse, growth * pulse, growth * pulse);
+
+                // Slight Oscillation
+                this.group.position.y = this.position.y + Math.sin(time + this.position.x) * 5;
             }
 
-            eat(preyScale) {
-                this.targetScale += preyScale * 0.1;
-                // 捕食時のフラッシュ効果
-                this.material.emissiveIntensity = 2.0;
-                setTimeout(() => this.material.emissiveIntensity = 0.6, 200);
+            explode() {
+                this.isExploding = true;
+                this.explosionTimer = 0;
+
+                // Initial flash
+                this.material.emissiveIntensity = 10.0;
+                this.light.intensity = 20;
+
+                // Create Supernova Particles
+                const partGeo = new THREE.BufferGeometry();
+                const partPos = new Float32Array(500 * 3);
+                const partVel = [];
+                for (let i = 0; i < 500; i++) {
+                    partPos[i * 3] = 0; partPos[i * 3 + 1] = 0; partPos[i * 3 + 2] = 0;
+                    partVel.push(new THREE.Vector3(Math.random() - 0.5, Math.random() - 0.5, Math.random() - 0.5).setLength(2 + Math.random() * 5));
+                }
+                partGeo.setAttribute('position', new THREE.BufferAttribute(partPos, 3));
+                const partMat = new THREE.PointsMaterial({ color: 0xffffff, size: 2, transparent: true });
+                this.particles = new THREE.Points(partGeo, partMat);
+                this.particles.vels = partVel;
+                this.group.add(this.particles);
             }
 
-            die() { this.isDead = true; }
-            dispose() { this.scene.remove(this.mesh); this.mesh.geometry.dispose(); this.mesh.material.dispose(); }
+            updateExplosion(delta) {
+                this.explosionTimer += delta;
+
+                // Expanding Particles
+                const positions = this.particles.geometry.attributes.position.array;
+                for (let i = 0; i < 500; i++) {
+                    const v = this.particles.vels[i];
+                    positions[i * 3] += v.x * delta * 50;
+                    positions[i * 3 + 1] += v.y * delta * 50;
+                    positions[i * 3 + 2] += v.z * delta * 50;
+                }
+                this.particles.geometry.attributes.position.needsUpdate = true;
+                this.particles.material.opacity = 1.0 - (this.explosionTimer / 2.0);
+
+                // Core Shrinking / Disappearing
+                const s = 1.0 + this.explosionTimer * 5;
+                this.core.scale.set(s, s, s);
+                this.material.opacity = 1.0 - (this.explosionTimer / 1.5);
+                this.material.transparent = true;
+
+                if (this.explosionTimer > 2.0) {
+                    this.isGone = true;
+                }
+            }
+
+            dispose() {
+                this.scene.remove(this.group);
+                this.core.geometry.dispose();
+                this.halo.geometry.dispose();
+                this.material.dispose();
+                if (this.particles) {
+                    this.particles.geometry.dispose();
+                    this.particles.material.dispose();
+                }
+            }
         }
 
         new Simulation();
