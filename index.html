@@ -359,13 +359,24 @@
             constructor(data, scene) {
                 this.scene = scene;
                 this.age = 0;
-                this.lifespan = 20.0 + Math.random() * 40.0; // 20-60 seconds
-                this.state = 'BIRTH'; // BIRTH, EVOLUTION, SUPERNOVA, DEATH
+                this.lifespan = 20.0 + Math.random() * 40.0;
+                this.state = 'BIRTH';
                 this.isExpired = false;
 
-                this.initialScale = Math.min(Math.max(data.scale, 5), 25);
+                // 質量（サイズ）に基づいて進化タイプを決定
+                this.initialScale = Math.min(Math.max(data.scale, 5), 45); // クランプ範囲を拡張
                 this.currentScale = this.initialScale;
                 this.baseColor = data.color;
+
+                if (this.initialScale < 12) {
+                    this.evolutionType = 'SMALL'; // -> 白色矮星
+                } else if (this.initialScale < 22) {
+                    this.evolutionType = 'STANDARD'; // -> 赤色巨星 -> 白色矮星
+                } else if (this.initialScale < 32) {
+                    this.evolutionType = 'LARGE'; // -> 超新星 -> 中性子星
+                } else {
+                    this.evolutionType = 'MASSIVE'; // -> 超新星 -> ブラックホール
+                }
 
                 this.position = new THREE.Vector3((Math.random() - 0.5) * 400, (Math.random() - 0.5) * 400, (Math.random() - 0.5) * 400);
                 this.velocity = new THREE.Vector3(Math.random() - 0.5, Math.random() - 0.5, Math.random() - 0.5).multiplyScalar(0.1);
@@ -374,20 +385,13 @@
             }
 
             initMesh(data) {
-                // --- スケッチ解析に基づき、星の「中心核」の幾何学を生成 ---
                 const pts = data.points.map(p => new THREE.Vector3(p[0] * this.initialScale * 2, p[1] * this.initialScale * 2, 0));
-
                 const shape = new THREE.Shape();
                 shape.moveTo(pts[0].x, pts[0].y);
                 pts.forEach(p => shape.lineTo(p.x, p.y));
 
-                // 恒星の「核」を押し出し、立体感を強調
                 const geo = new THREE.ExtrudeGeometry(shape, {
-                    depth: 4,
-                    bevelEnabled: true,
-                    bevelSize: 4,
-                    bevelThickness: 4,
-                    bevelSegments: 3
+                    depth: 4, bevelEnabled: true, bevelSize: 4, bevelThickness: 4, bevelSegments: 3
                 });
 
                 this.material = new THREE.MeshPhongMaterial({
@@ -403,21 +407,36 @@
                 this.mesh = new THREE.Mesh(geo, this.material);
                 this.scene.add(this.mesh);
 
-                // オーラエフェクト (Sprite)
+                // オーラエフェクト
                 const canvas = document.createElement('canvas');
-                canvas.width = 64; canvas.height = 64;
-                const c = canvas.getContext('2d');
-                const grad = c.createRadialGradient(32, 32, 0, 32, 32, 32);
-                // 中心部を少し透過させてコアを見やすくする
-                grad.addColorStop(0, 'rgba(255, 255, 255, 0.4)');
-                grad.addColorStop(0.3, this.baseColor.getStyle());
-                grad.addColorStop(1, 'transparent');
-                c.fillStyle = grad; c.fillRect(0, 0, 64, 64);
+                canvas.width = 128; canvas.height = 128;
+                this.auraCtx = canvas.getContext('2d');
+                this.updateAuraTexture();
 
-                const texture = new THREE.CanvasTexture(canvas);
-                this.aura = new THREE.Sprite(new THREE.SpriteMaterial({ map: texture, transparent: true, opacity: 1, blending: THREE.AdditiveBlending }));
-                this.aura.scale.set(this.initialScale * 6, this.initialScale * 6, 1);
+                this.auraTexture = new THREE.CanvasTexture(canvas);
+                this.aura = new THREE.Sprite(new THREE.SpriteMaterial({ map: this.auraTexture, transparent: true, opacity: 1, blending: THREE.AdditiveBlending }));
+                this.aura.scale.set(this.initialScale * 8, this.initialScale * 8, 1);
                 this.mesh.add(this.aura);
+            }
+
+            updateAuraTexture(color = this.baseColor, forceWhiteCenter = false) {
+                const c = this.auraCtx;
+                c.clearRect(0, 0, 128, 128);
+                const grad = c.createRadialGradient(64, 64, 0, 64, 64, 64);
+                const colorStr = color.getStyle ? color.getStyle() : `hsl(${color.h * 360}, ${color.s * 100}%, ${color.l * 100}%)`;
+
+                if (forceWhiteCenter) {
+                    grad.addColorStop(0, 'white');
+                    grad.addColorStop(0.2, 'white');
+                } else {
+                    grad.addColorStop(0, 'rgba(255, 255, 255, 0.8)');
+                }
+                grad.addColorStop(0.4, colorStr);
+                grad.addColorStop(1, 'transparent');
+
+                c.fillStyle = grad;
+                c.fillRect(0, 0, 128, 128);
+                if (this.auraTexture) this.auraTexture.needsUpdate = true;
             }
 
             update(time, delta) {
@@ -425,46 +444,141 @@
                 const progress = this.age / this.lifespan;
 
                 if (this.state === 'BIRTH') {
-                    this.material.opacity += 0.05;
+                    this.material.opacity += 0.02;
                     if (this.material.opacity >= 0.9) this.state = 'EVOLUTION';
                 }
 
                 if (this.state === 'EVOLUTION') {
-                    // 徐々に膨張
-                    this.currentScale = this.initialScale * (1.0 + progress * 0.5);
-                    this.mesh.scale.setScalar(1.0 + Math.sin(time * 2) * 0.05); // 脈動
-                    this.aura.scale.setScalar(this.currentScale * 5 * (1.0 + Math.sin(time * 4) * 0.1));
+                    this.mesh.rotation.y += 0.01;
+                    this.mesh.rotation.x += 0.005;
 
-                    // 色の遷移（青/白 -> 黄 -> 赤）
-                    const h = (0.6 - progress * 0.6 + 1.0) % 1.0;
-                    this.material.color.setHSL(h, 0.8, 0.5);
-                    this.material.emissive.setHSL(h, 0.8, 0.5);
+                    switch (this.evolutionType) {
+                        case 'SMALL':
+                            // 安定した小型星
+                            this.currentScale = this.initialScale;
+                            if (progress > 0.8) {
+                                this.currentScale *= (1.0 - (progress - 0.8) * 2); // 収縮
+                                this.material.color.lerp(new THREE.Color(0xaaaaff), 0.1);
+                            }
+                            break;
 
-                    if (progress >= 0.95) this.state = 'SUPERNOVA';
+                        case 'STANDARD':
+                            // 赤色巨星化
+                            if (progress > 0.6) {
+                                this.state = 'RED_GIANT';
+                            }
+                            break;
+
+                        case 'LARGE':
+                        case 'MASSIVE':
+                            // 巨大星・超巨大星 -> 終盤に不安定化
+                            this.mesh.scale.setScalar(1.0 + Math.sin(time * 10) * progress * 0.2);
+                            if (progress > 0.9) this.state = 'SUPERNOVA';
+                            break;
+                    }
+
+                    // 基本的な色変化（青->黄->赤）
+                    if (this.state === 'EVOLUTION') {
+                        const h = (0.6 - progress * 0.4 + 1.0) % 1.0;
+                        this.material.color.setHSL(h, 0.8, 0.5);
+                        this.material.emissive.setHSL(h, 0.8, 0.5);
+                    }
+                }
+
+                if (this.state === 'RED_GIANT') {
+                    this.currentScale = this.initialScale * (1.0 + (progress - 0.6) * 4);
+                    this.material.color.lerp(new THREE.Color(0xff3300), 0.05);
+                    this.material.emissive.lerp(new THREE.Color(0xff3300), 0.05);
+                    this.mesh.scale.setScalar(1.0 + Math.sin(time * 3) * 0.1); // 脈動
+                    if (progress > 0.95) this.state = 'NEBULA_RELEASE';
                 }
 
                 if (this.state === 'SUPERNOVA') {
-                    // 爆発的膨張
-                    this.mesh.scale.multiplyScalar(1.1);
+                    this.currentScale *= 1.05;
                     this.material.emissiveIntensity += 0.5;
-                    this.material.opacity -= 0.05;
-
-                    if (this.material.opacity <= 0) {
-                        this.state = 'DEATH';
-                        this.isExpired = true;
+                    if (this.material.emissiveIntensity > 15) {
+                        if (this.evolutionType === 'LARGE') this.state = 'NEUTRON_STAR';
+                        else this.state = 'BLACK_HOLE';
+                        this.material.emissiveIntensity = 1.0;
                     }
+                }
+
+                if (this.state === 'NEBULA_RELEASE') {
+                    this.aura.material.opacity -= 0.01;
+                    this.currentScale *= 0.98;
+                    if (this.currentScale < 3) {
+                        this.state = 'WHITE_DWARF';
+                        this.currentScale = 5;
+                        this.material.opacity = 1;
+                        this.updateAuraTexture(new THREE.Color(0xffffff), true);
+                        this.aura.material.opacity = 1;
+                    }
+                }
+
+                if (this.state === 'WHITE_DWARF') {
+                    this.material.color.set(0xffffff);
+                    this.material.emissive.set(0xffffff);
+                    this.mesh.scale.setScalar(1.0 + Math.sin(time * 5) * 0.02);
+                    if (progress > 0.99) this.isExpired = true;
+                }
+
+                if (this.state === 'NEUTRON_STAR') {
+                    this.currentScale = 4;
+                    this.material.color.set(0x00ffff);
+                    this.material.emissive.set(0x00ffff);
+                    this.updateAuraTexture(new THREE.Color(0x00ffff), true);
+                    this.mesh.rotation.y += 0.5; // 超高速回転
+                    this.aura.scale.setScalar(this.currentScale * 15 * (1.0 + Math.sin(time * 20) * 0.3));
+                    if (progress > 0.99) this.isExpired = true;
+                }
+
+                if (this.state === 'BLACK_HOLE') {
+                    this.currentScale = 8;
+                    this.material.color.set(0x000000);
+                    this.material.emissive.set(0x000000);
+                    this.material.transparent = false;
+                    this.updateAuraTexture(new THREE.Color(0x330066), false);
+                    this.aura.material.blending = THREE.SubtractiveBlending; // 周囲を「吸い込む」演出
+                    this.aura.scale.setScalar(this.currentScale * 10);
+                    if (progress > 0.99) this.isExpired = true;
+                }
+
+                // スケール適用ロジック
+                let pulsate = 1.0;
+                if (this.state === 'EVOLUTION') {
+                    if (this.evolutionType === 'LARGE' || this.evolutionType === 'MASSIVE') {
+                        pulsate = 1.0 + Math.sin(time * 10) * progress * 0.2;
+                    } else {
+                        pulsate = 1.0 + Math.sin(time * 2) * 0.05;
+                    }
+                } else if (this.state === 'RED_GIANT') {
+                    pulsate = 1.0 + Math.sin(time * 3) * 0.1;
+                } else if (this.state === 'WHITE_DWARF') {
+                    pulsate = 1.0 + Math.sin(time * 5) * 0.02;
+                } else if (this.state === 'NEUTRON_STAR') {
+                    pulsate = 1.0 + Math.sin(time * 20) * 0.3;
+                }
+
+                const s = this.currentScale / this.initialScale;
+                this.mesh.scale.setScalar(s * pulsate);
+
+                // オーラのスケーリング（ブラックホール以外はAdditive）
+                if (this.state !== 'BLACK_HOLE') {
+                    this.aura.scale.setScalar(this.currentScale * 8 * pulsate);
+                } else {
+                    this.aura.scale.setScalar(this.currentScale * 10);
                 }
 
                 this.position.add(this.velocity);
                 this.mesh.position.copy(this.position);
-                this.mesh.rotation.y += 0.01;
-                this.mesh.rotation.x += 0.005;
             }
 
             dispose() {
                 this.scene.remove(this.mesh);
                 this.mesh.geometry.dispose();
                 this.mesh.material.dispose();
+                this.aura.material.dispose();
+                this.auraTexture.dispose();
             }
         }
 
