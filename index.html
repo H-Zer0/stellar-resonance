@@ -551,8 +551,10 @@
                             // 安定した小型星
                             this.currentScale = this.initialScale;
                             if (progress > 0.8) {
-                                this.currentScale *= (1.0 - (progress - 0.8) * 2); // 収縮
-                                this.material.color.lerp(new THREE.Color(0xaaaaff), 0.1);
+                                // ゆるやかに収縮させつつ、輝き（エミッシブ）を維持
+                                this.currentScale *= (1.0 - (progress - 0.8) * 0.5);
+                                this.material.color.lerp(new THREE.Color(0xccddff), 0.05);
+                                this.material.emissiveIntensity = 1.2 + (progress - 0.8) * 2;
                             }
                             break;
 
@@ -613,7 +615,6 @@
                     this.material.color.set(0xffffff);
                     this.material.emissive.set(0xffffff);
                     this.mesh.scale.setScalar(1.0 + Math.sin(time * 5) * 0.02);
-                    if (progress > 0.99) this.isExpired = true;
                 }
 
                 if (this.state === 'NEUTRON_STAR') {
@@ -623,18 +624,32 @@
                     this.updateAuraTexture(new THREE.Color(0x00ffff), true);
                     this.mesh.rotation.y += 0.5; // 超高速回転
                     this.aura.scale.setScalar(this.currentScale * 15 * (1.0 + Math.sin(time * 20) * 0.3));
-                    if (progress > 0.99) this.isExpired = true;
                 }
 
                 if (this.state === 'BLACK_HOLE') {
                     this.currentScale = 8;
                     this.material.color.set(0x000000);
                     this.material.emissive.set(0x000000);
-                    this.material.transparent = false;
+                    this.material.transparent = true;
                     this.updateAuraTexture(new THREE.Color(0x330066), false);
                     this.aura.material.blending = THREE.SubtractiveBlending; // 周囲を「吸い込む」演出
                     this.aura.scale.setScalar(this.currentScale * 10);
-                    if (progress > 0.99) this.isExpired = true;
+                }
+
+                // --- 共通の消滅ロジック（フェードアウト） ---
+                if (progress > 0.9) {
+                    const fadeProgress = (progress - 0.9) * 10; // 0.0 to 1.0
+                    this.material.opacity = Math.max(0, 0.9 * (1.0 - fadeProgress));
+                    this.aura.material.opacity = Math.max(0, 1.0 - fadeProgress);
+
+                    if (this.material.opacity <= 0.01 && this.aura.material.opacity <= 0.01) {
+                        this.isExpired = true;
+                    }
+                }
+
+                // バックアップ：寿命が完全に来たら消滅
+                if (progress > 0.995) {
+                    this.isExpired = true;
                 }
 
                 // スケール適用ロジック
