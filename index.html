@@ -131,6 +131,38 @@
             letter-spacing: 0.4rem;
             z-index: 210;
         }
+
+        #mass-control {
+            position: absolute;
+            bottom: 20%;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 300px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 1rem;
+            z-index: 210;
+            background: rgba(0, 0, 0, 0.4);
+            padding: 1rem;
+            border-radius: 15px;
+            border: 1px solid rgba(255, 204, 0, 0.3);
+            backdrop-filter: blur(10px);
+        }
+
+        #mass-slider {
+            width: 100%;
+            cursor: pointer;
+            accent-color: var(--accent);
+        }
+
+        #mass-label {
+            color: var(--accent);
+            font-weight: bold;
+            font-family: monospace;
+            font-size: 1.1rem;
+            text-shadow: 0 0 10px var(--accent);
+        }
     </style>
 </head>
 
@@ -149,6 +181,12 @@
 
     <div id="sketch-overlay">
         <div id="sketch-hint">星の核（形）を描いてください</div>
+
+        <div id="mass-control">
+            <div id="mass-label">質量: 普通 (恒星)</div>
+            <input type="range" id="mass-slider" min="5" max="45" value="18">
+        </div>
+
         <div id="sketch-ui">
             <button class="btn" id="confirm-sketch-btn">星を誕生させる</button>
             <button class="btn" id="clear-sketch-btn">修正</button>
@@ -244,8 +282,22 @@
                 const overlay = document.getElementById('sketch-overlay');
                 const canvas = document.getElementById('sketch-canvas');
                 const ctx = canvas.getContext('2d');
+                const massSlider = document.getElementById('mass-slider');
+                const massLabel = document.getElementById('mass-label');
                 let points = [];
                 let isDrawing = false;
+
+                const updateMassLabel = () => {
+                    const val = parseInt(massSlider.value);
+                    let type = "";
+                    if (val < 12) type = "小型星 (白色矮星へ)";
+                    else if (val < 22) type = "標準星 (赤色巨星へ)";
+                    else if (val < 32) type = "巨大星 (超新星爆発へ)";
+                    else type = "超巨大星 (ブラックホールへ)";
+                    massLabel.innerText = `質量: ${val} - ${type}`;
+                };
+                massSlider.oninput = updateMassLabel;
+                updateMassLabel();
 
                 const resize = () => { canvas.width = window.innerWidth; canvas.height = window.innerHeight; };
                 window.addEventListener('resize', resize);
@@ -278,16 +330,19 @@
                 document.getElementById('confirm-sketch-btn').onclick = () => {
                     if (points.length < 10) return;
 
-                    // 正規化
+                    // 正規化（形状のみを抽出）
                     const xCoords = points.map(p => p[0]), yCoords = points.map(p => p[1]);
                     const minX = Math.min(...xCoords), maxX = Math.max(...xCoords);
                     const minY = Math.min(...yCoords), maxY = Math.max(...yCoords);
                     const w = maxX - minX, h = maxY - minY;
+
+                    // スライダーから質量を取得
+                    const selectedMass = parseInt(massSlider.value);
                     const normalized = points.map(p => [(p[0] - minX) / w - 0.5, -((p[1] - minY) / h - 0.5)]);
 
                     const star = new Star({
                         points: normalized,
-                        scale: Math.sqrt(w * h) * 0.08,
+                        scale: selectedMass,
                         color: new THREE.Color().setHSL(Math.random(), 0.7, 0.5)
                     }, this.scene);
 
@@ -339,8 +394,30 @@
                 const delta = this.clock.getDelta();
                 const time = this.clock.getElapsedTime();
 
+                // ブラックホールのリストを作成
+                const blackHoles = this.stars.filter(s => s.state === 'BLACK_HOLE');
+
                 for (let i = this.stars.length - 1; i >= 0; i--) {
                     const s = this.stars[i];
+
+                    // 重力計算（ブラックホール以外の星に影響）
+                    if (s.state !== 'BLACK_HOLE') {
+                        blackHoles.forEach(bh => {
+                            const dist = s.position.distanceTo(bh.position);
+                            if (dist < 150) { // 影響範囲
+                                // 引力ベクトル
+                                const pull = new THREE.Vector3().subVectors(bh.position, s.position).normalize();
+                                const force = (150 - dist) * 0.001;
+                                s.velocity.add(pull.multiplyScalar(force));
+
+                                // イベントホライズン（吸収判定）
+                                if (dist < 15) {
+                                    s.isExpired = true; // 吸収
+                                }
+                            }
+                        });
+                    }
+
                     s.update(time, delta);
 
                     if (s.isExpired) {
