@@ -356,14 +356,31 @@
                     const w = maxX - minX, h = maxY - minY;
                     // スライダーから質量（進化タイプ）を取得
                     const stage = parseInt(massSlider.value);
-                    const massMap = { 1: 8, 2: 18, 3: 28, 4: 40 };
+                    const massMap = { 1: 6, 2: 15, 3: 30, 4: 48 };
                     const selectedMass = massMap[stage];
                     const normalized = points.map(p => [(p[0] - minX) / w - 0.5, -((p[1] - minY) / h - 0.5)]);
+
+                    // --- 配置位置の最適化（既存の星との距離を確保） ---
+                    let birthPos = new THREE.Vector3((Math.random() - 0.5) * 400, (Math.random() - 0.5) * 400, (Math.random() - 0.5) * 400);
+                    let attempts = 0;
+                    while (attempts < 20) {
+                        let tooClose = false;
+                        for (const s of this.stars) {
+                            if (birthPos.distanceTo(s.position) < 80) { // 最小距離
+                                tooClose = true;
+                                break;
+                            }
+                        }
+                        if (!tooClose) break;
+                        birthPos.set((Math.random() - 0.5) * 400, (Math.random() - 0.5) * 400, (Math.random() - 0.5) * 400);
+                        attempts++;
+                    }
 
                     const star = new Star({
                         points: normalized,
                         scale: selectedMass,
-                        color: new THREE.Color().setHSL(Math.random(), 0.7, 0.5)
+                        color: new THREE.Color().setHSL(Math.random(), 0.7, 0.5),
+                        position: birthPos
                     }, this.scene);
 
                     this.stars.push(star);
@@ -484,7 +501,7 @@
                     this.evolutionType = 'MASSIVE'; // -> ブラックホール
                 }
 
-                this.position = new THREE.Vector3((Math.random() - 0.5) * 400, (Math.random() - 0.5) * 400, (Math.random() - 0.5) * 400);
+                this.position = data.position || new THREE.Vector3((Math.random() - 0.5) * 400, (Math.random() - 0.5) * 400, (Math.random() - 0.5) * 400);
                 this.velocity = new THREE.Vector3(Math.random() - 0.5, Math.random() - 0.5, Math.random() - 0.5).multiplyScalar(0.1);
 
                 this.initMesh(data);
@@ -531,11 +548,11 @@
                 const grad = c.createRadialGradient(64, 64, 0, 64, 64, 64);
 
                 if (this.state === 'BLACK_HOLE') {
-                    // ブラックホール専用：中心を完全に黒く、外側を紫/青系の深い色に
+                    // ブラックホール専用：中心を完全に黒く、外側のエッジにわずかな光の歪みを表現
                     grad.addColorStop(0, 'rgba(0, 0, 0, 1)');
-                    grad.addColorStop(0.3, 'rgba(0, 0, 0, 1)');
-                    grad.addColorStop(0.4, 'rgba(50, 0, 100, 0.8)');
-                    grad.addColorStop(0.6, 'rgba(20, 0, 40, 0.4)');
+                    grad.addColorStop(0.35, 'rgba(0, 0, 0, 1)');
+                    grad.addColorStop(0.38, 'rgba(100, 50, 255, 0.6)'); // 事象の地平線直後の青白い光
+                    grad.addColorStop(0.45, 'rgba(30, 0, 60, 0.4)');
                     grad.addColorStop(1, 'transparent');
                 } else {
                     const colorStr = color.getStyle ? color.getStyle() : `hsl(${color.h * 360}, ${color.s * 100}%, ${color.l * 100}%)`;
@@ -588,7 +605,7 @@
 
                         case 'LARGE':
                         case 'MASSIVE':
-                            // 巨大星・超巨大星 -> 終盤に不安定化（計算は後半の共通ロジックで実施）
+                            // 不安定化の直接的な計算は削除し、寿命末期のSUPERNOVA判定のみ行う
                             if (progress > 0.95) this.state = 'SUPERNOVA';
                             break;
                     }
@@ -612,18 +629,20 @@
                 if (this.state === 'SUPERNOVA') {
                     if (this.evolutionType === 'MASSIVE') {
                         // 超巨大星の爆縮演出
-                        this.currentScale *= 1.1; // 最初は少し膨張
+                        this.currentScale *= 1.02; // わずかな膨張
                         this.material.emissiveIntensity += 1.0;
-                        if (this.material.emissiveIntensity > 15) {
+                        if (this.material.emissiveIntensity > 20) {
                             this.state = 'IMPLOSION';
                         }
                     } else {
-                        this.currentScale *= 1.05;
-                        this.material.emissiveIntensity += 0.5;
-                        if (this.material.emissiveIntensity > 15) {
-                            if (this.evolutionType === 'LARGE') this.state = 'NEUTRON_STAR';
-                            else this.state = 'BLACK_HOLE'; // フォールバック用
+                        // 巨大星：一気に巨大化して爆発（不安定化なしの純粋な爆発）
+                        this.currentScale *= 1.15;
+                        this.material.emissiveIntensity += 0.8;
+                        this.material.opacity -= 0.05;
+                        if (this.material.opacity <= 0.1) {
+                            this.state = 'NEUTRON_STAR';
                             this.material.emissiveIntensity = 1.0;
+                            this.material.opacity = 1.0;
                         }
                     }
                 }
@@ -697,12 +716,8 @@
                 // スケール適用ロジック
                 let pulsate = 1.0;
                 if (this.state === 'EVOLUTION') {
-                    if (this.evolutionType === 'LARGE' || this.evolutionType === 'MASSIVE') {
-                        // 寿命の終盤（progress^4）に向けて急激に不安定化させる
-                        pulsate = 1.0 + Math.sin(time * 15) * Math.pow(progress, 4) * 0.3;
-                    } else {
-                        pulsate = 1.0 + Math.sin(time * 2) * 0.05;
-                    }
+                    // 通常の脈動のみ
+                    pulsate = 1.0 + Math.sin(time * 2) * 0.05;
                 } else if (this.state === 'RED_GIANT') {
                     pulsate = 1.0 + Math.sin(time * 3) * 0.1;
                 } else if (this.state === 'WHITE_DWARF') {
