@@ -379,13 +379,21 @@
                 shape.moveTo(pts[0].x, pts[0].y);
                 pts.forEach(p => shape.lineTo(p.x, p.y));
 
-                // 恒星の「核」を押し出し、複雑な光を反射させる
-                const geo = new THREE.ExtrudeGeometry(shape, { depth: 2, bevelEnabled: true, bevelSize: 3, bevelThickness: 3 });
+                // 恒星の「核」を押し出し、立体感を強調
+                const geo = new THREE.ExtrudeGeometry(shape, {
+                    depth: 4,
+                    bevelEnabled: true,
+                    bevelSize: 4,
+                    bevelThickness: 4,
+                    bevelSegments: 3
+                });
 
                 this.material = new THREE.MeshPhongMaterial({
                     color: this.baseColor,
                     emissive: this.baseColor,
-                    emissiveIntensity: 1.0,
+                    emissiveIntensity: 1.2,
+                    specular: new THREE.Color(0xffffff),
+                    shininess: 100,
                     transparent: true,
                     opacity: 0
                 });
@@ -398,8 +406,9 @@
                 canvas.width = 64; canvas.height = 64;
                 const c = canvas.getContext('2d');
                 const grad = c.createRadialGradient(32, 32, 0, 32, 32, 32);
-                grad.addColorStop(0, 'white');
-                grad.addColorStop(0.2, this.baseColor.getStyle());
+                // 中心部を少し透過させてコアを見やすくする
+                grad.addColorStop(0, 'rgba(255, 255, 255, 0.4)');
+                grad.addColorStop(0.3, this.baseColor.getStyle());
                 grad.addColorStop(1, 'transparent');
                 c.fillStyle = grad; c.fillRect(0, 0, 64, 64);
 
